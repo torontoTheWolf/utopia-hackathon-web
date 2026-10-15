@@ -56,17 +56,23 @@ const DENIED = new Set(['no', 'private', 'agricultural', 'forestry', 'emergency'
 
 const UNITS_PER_DEGREE = 1e7
 const METRES_PER_UNIT = ((Math.PI / 180) * 6_371_000) / UNITS_PER_DEGREE
-// 0.01°, about 1.1 km. Snapping looks at the 3×3 cells around a point, so it finds every node within SNAP_METRES.
+// 0.01°, about 1.1 km. Finding the closest road looks at the 3×3 cells around a point, so it sees every node within
+// SNAP_METRES, and the roads leaving them.
 const CELL = 100_000
 const SNAP_METRES = 1000
 // Points aren't snapped to smaller islands of road, like a car park behind a private gate, where a search would be stuck.
 const MIN_NETWORK_NODES = 1000
 // Stops a search for an unreachable place before it walks the whole country.
 const MAX_SETTLED = 1_000_000
-// A place counts as reached from any road node this close to it. 0.005° is about 550 m, so the 3×3 cells around a
-// node hold every place within ATTACH_METRES of it.
-const ATTACH_METRES = 500
-const ATTACH_CELL = 0.005
+// A route may join the road this much further from its end than the closest road does, such as across the street.
+// More would let it cut across canals and buildings in a straight line.
+const SLACK_METRES = 30
+// Places are bucketed into squares of 0.005°, about 550 m, and each node looks for places in the 3×3 around it.
+const PLACE_CELL = 0.005
+// Finding the closest road skips cells whose nodes are all further away than the best so far by this much, since a road
+// rarely runs further than this from both of its ends.
+const EDGE_REACH_METRES = 200
+const NEIGHBOURS = [[-1, -1], [-1, 0], [-1, 1], [0, -1], [0, 1], [1, -1], [1, 0], [1, 1]] as const
 const WALK_METRES_PER_SECOND = 5 / 3.6
 
 // Bump when buildRoadGraph or the file layout changes, so old caches are rebuilt.
@@ -175,15 +181,20 @@ function readEdges(pbfPath: string): Edges {
   return { lat, lng, firstEdge, edgeTarget, edgeFlags }
 }
 
+// A point on the road leaving node `from` for node `to` by `edge`, `along` the way from one to the other, and how far
+// it is from the point it was found for.
+type RoadPoint = { edge: number; from: number; to: number; along: number; metres: number }
+
 export type Router = {
   route: (from: LatLng, to: LatLng, mode: TravelMode) => Route | null
-  // The index of the target that is closest by road for the mode, counting the last stretch from the road. Targets
-  // more than ATTACH_METRES from a road for the mode aren't found.
-  nearest: (from: LatLng, targets: readonly LatLng[], mode: TravelMode) => number | null
+  // The index of the target that is closest by road for the mode, with each target's distance multiplied by its
+  // factor, or null when none can be reached.
+  nearest: (from: LatLng, targets: readonly { position: LatLng; factor: number }[], mode: TravelMode) => number | null
 }
 
+// Routes start and end on the closest point of the closest road, and follow roads and paths in between.
 export function createRouter(graph: RoadGraph): Router {
-  const { lat, lng, firstEdge, edgeTarget, edgeFlags } = graph
+  const { lat, lng, firstEdge, edgeTarget, edgeFlags, snapModes, grid, cellStart, cellNodes } = graph
   const nodeCount = lat.length
   // Reused by every search. A node's cost and parent only count when its stamp matches the current search.
   const cost = new Float32Array(nodeCount)
@@ -191,6 +202,8 @@ export function createRouter(graph: RoadGraph): Router {
   const stamp = new Uint32Array(nodeCount)
   const heap = new MinHeap()
   let search = 0
+  // How far each place is from its closest road, by mode, kept between searches.
+  const closestRoadMetres = new Map<string, number>()
 
   const positionOf = (node: number): LatLng => ({ lat: lat[node] / UNITS_PER_DEGREE, lng: lng[node] / UNITS_PER_DEGREE })
   // Over the few kilometres of a route the earth is flat enough to measure with one longitude scale.
@@ -198,24 +211,95 @@ export function createRouter(graph: RoadGraph): Router {
     Math.hypot((lng[a] - lng[b]) * lngScale, lat[a] - lat[b]) * METRES_PER_UNIT
   const metresTo = (node: number, point: LatLng, lngScale: number) =>
     Math.hypot((lng[node] - point.lng * UNITS_PER_DEGREE) * lngScale, lat[node] - point.lat * UNITS_PER_DEGREE) * METRES_PER_UNIT
+  const pointAlong = (a: number, b: number, along: number): LatLng => ({
+    lat: (lat[a] + (lat[b] - lat[a]) * along) / UNITS_PER_DEGREE,
+    lng: (lng[a] + (lng[b] - lng[a]) * along) / UNITS_PER_DEGREE,
+  })
+
+  // Where `point` comes closest to the road from node a to node b. Reused, so read it before projecting again.
+  const projection = { along: 0, metres: 0 }
+  const project = (a: number, b: number, point: LatLng, lngScale: number) => {
+    const dx = (lng[b] - lng[a]) * lngScale
+    const dy = lat[b] - lat[a]
+    const px = (point.lng * UNITS_PER_DEGREE - lng[a]) * lngScale
+    const py = point.lat * UNITS_PER_DEGREE - lat[a]
+    const lengthSquared = dx * dx + dy * dy
+    const along = lengthSquared === 0 ? 0 : Math.min(1, Math.max(0, (px * dx + py * dy) / lengthSquared))
+    projection.along = along
+    projection.metres = Math.hypot(px - along * dx, py - along * dy) * METRES_PER_UNIT
+    return projection
+  }
+
+  // The closest point within SNAP_METRES on a road for the mode, between nodes the mode can be snapped to.
+  const closestRoadPoint = (point: LatLng, bit: number, lngScale: number): RoadPoint | null => {
+    const pointLat = point.lat * UNITS_PER_DEGREE
+    const pointLng = point.lng * UNITS_PER_DEGREE
+    const row = Math.floor((pointLat - grid.south) / CELL)
+    const col = Math.floor((pointLng - grid.west) / CELL)
+    let best: RoadPoint | null = null
+    // The point's own cell first, so that the others can mostly be skipped.
+    for (const [r, c] of [[row, col], ...NEIGHBOURS.map(([dr, dc]) => [row + dr, col + dc])]) {
+      if (r < 0 || r >= grid.rows || c < 0 || c >= grid.cols) continue
+      const south = grid.south + r * CELL
+      const west = grid.west + c * CELL
+      const gap = Math.hypot(
+        Math.max(south - pointLat, 0, pointLat - south - CELL),
+        Math.max(west - pointLng, 0, pointLng - west - CELL) * lngScale,
+      )
+      if (gap * METRES_PER_UNIT - EDGE_REACH_METRES >= (best?.metres ?? SNAP_METRES)) continue
+      const cell = r * grid.cols + c
+      for (let slot = cellStart[cell]; slot < cellStart[cell + 1]; slot++) {
+        const node = cellNodes[slot]
+        if (!(snapModes[node] & bit)) continue
+        for (let edge = firstEdge[node]; edge < firstEdge[node + 1]; edge++) {
+          const next = edgeTarget[edge]
+          if (!(edgeFlags[edge] & bit) || !(snapModes[next] & bit)) continue
+          const { along, metres: away } = project(node, next, point, lngScale)
+          if (away < (best?.metres ?? SNAP_METRES)) best = { edge, from: node, to: next, along, metres: away }
+        }
+      }
+    }
+    return best
+  }
+
+  const reverseEdge = (from: number, to: number, bit: number) => {
+    for (let edge = firstEdge[to]; edge < firstEdge[to + 1]; edge++) {
+      if (edgeTarget[edge] === from && edgeFlags[edge] & bit) return edge
+    }
+    return -1
+  }
+
+  type StepCost = (metres: number, flags: number) => number
+
+  // From a point on a road, a search sets off along it to its end, and back to its start if the road goes both ways.
+  const seedsFrom = (start: RoadPoint, bit: number, stepCost: StepCost, lngScale: number) => {
+    const length = metres(start.from, start.to, lngScale)
+    const seeds = [{ node: start.to, cost: stepCost(length * (1 - start.along), edgeFlags[start.edge]) }]
+    const back = reverseEdge(start.from, start.to, bit)
+    if (back >= 0) seeds.push({ node: start.from, cost: stepCost(length * start.along, edgeFlags[back]) })
+    return seeds
+  }
 
   // Reaches nodes in order of cost plus `toGoal`, an estimate of the cost left that is never too high. `reach` sees each
   // node once at its lowest cost, and returns true to stop.
   const explore = (
-    start: number,
-    mode: TravelMode,
+    seeds: readonly { node: number; cost: number }[],
+    bit: number,
     lngScale: number,
-    stepCost: (metres: number, flags: number) => number,
+    stepCost: StepCost,
     toGoal: (node: number) => number,
     reach: (node: number, cost: number) => boolean,
   ): void => {
-    const bit = MODE_BITS[mode]
     search++
     heap.clear()
-    stamp[start] = search
-    cost[start] = 0
-    parent[start] = -1
-    heap.push(toGoal(start), start, 0)
+    for (const seed of seeds) {
+      const seedCost = Math.fround(seed.cost)
+      if (stamp[seed.node] === search && seedCost >= cost[seed.node]) continue
+      stamp[seed.node] = search
+      cost[seed.node] = seedCost
+      parent[seed.node] = -1
+      heap.push(seedCost + toGoal(seed.node), seed.node, seedCost)
+    }
     for (let settled = 0; heap.size > 0 && settled < MAX_SETTLED; ) {
       const { node, cost: reached } = heap.pop()
       if (reached > cost[node]) continue
@@ -235,66 +319,127 @@ export function createRouter(graph: RoadGraph): Router {
     }
   }
 
-  // The route the last search took to `end`, with straight ends from `from` and to `to`.
-  const routeTo = (end: number, from: LatLng, to: LatLng, lngScale: number): Route => {
+  // The nodes the last search took to `end`, from where it set off.
+  const nodesTo = (end: number) => {
     const nodes: number[] = []
     for (let at = end; at !== -1; at = parent[at]) nodes.push(at)
-    const path = [from, ...nodes.reverse().map(positionOf), to]
-    let distance = 0
-    for (let i = 1; i < path.length; i++) distance += flatMetres(path[i - 1], path[i], lngScale)
-    return { distanceKm: distance / 1000, path }
+    return nodes.reverse()
+  }
+
+  // How far along the start's road a point on the same road is, or null when it's on another road.
+  const alongSameRoad = (start: RoadPoint, other: { from: number; to: number; along: number }) => {
+    if (other.from === start.from && other.to === start.to) return other.along
+    if (other.from === start.to && other.to === start.from) return 1 - other.along
+    return null
+  }
+
+  // The cost of travelling along the start's road to `along` without leaving it, or Infinity if the mode can't.
+  const costAlongStartRoad = (start: RoadPoint, along: number, bit: number, stepCost: StepCost, lngScale: number) => {
+    const edge = along >= start.along ? start.edge : reverseEdge(start.from, start.to, bit)
+    return edge < 0 ? Infinity : stepCost(metres(start.from, start.to, lngScale) * Math.abs(along - start.along), edgeFlags[edge])
   }
 
   return {
-    // Ends at whichever road node within SNAP_METRES of `to` makes the whole trip cheapest, not just the closest one,
-    // which can be a long way round. The last stretch, from the road to `to`, is on foot.
     route(from, to, mode) {
-      const start = nearestNode(graph, from, MODE_BITS[mode])
-      // Without a road near `to`, the search would only stop after reaching everything it can.
-      if (start < 0 || nearestNode(graph, to, MODE_BITS[mode]) < 0) return null
+      const bit = MODE_BITS[mode]
       const lngScale = Math.cos((from.lat * Math.PI) / 180)
-      // Walks are the shortest, in metres, and drives the quickest, in seconds at each road's speed.
-      const stepCost = mode === 'foot' ? (length: number) => length : (length: number, flags: number) => length / (((flags >> 2) * 2) / 3.6)
+      const start = closestRoadPoint(from, bit, lngScale)
+      const end = closestRoadPoint(to, bit, lngScale)
+      if (start === null || end === null) return null
+      // Walks are the shortest, in metres, and drives the quickest, in seconds at each road's speed. The last stretch,
+      // from the road to `to`, is on foot.
+      const stepCost: StepCost = mode === 'foot' ? (length) => length : (length, flags) => length / (((flags >> 2) * 2) / 3.6)
       const lastStretch = mode === 'foot' ? (length: number) => length : (length: number) => length / WALK_METRES_PER_SECOND
       const speed = mode === 'foot' ? 1 : MAX_CAR_METRES_PER_SECOND
       const toGoal = (node: number) => metresTo(node, to, lngScale) / speed
-      let best = { cost: Infinity, node: -1 }
-      explore(start, mode, lngScale, stepCost, toGoal, (node, reached) => {
-        // Nodes come in order of cost plus toGoal, which never overestimates, so nothing later can do better.
+
+      let best = { cost: Infinity, node: -1, joint: pointAlong(end.from, end.to, end.along) }
+      const endAlong = alongSameRoad(start, end)
+      if (endAlong !== null) best.cost = costAlongStartRoad(start, endAlong, bit, stepCost, lngScale) + lastStretch(end.metres)
+      explore(seedsFrom(start, bit, stepCost, lngScale), bit, lngScale, stepCost, toGoal, (node, reached) => {
+        // Nothing reached from here on can do better, since toGoal never overestimates.
         if (reached + toGoal(node) >= best.cost) return true
-        const length = metresTo(node, to, lngScale)
-        if (length <= SNAP_METRES && reached + lastStretch(length) < best.cost) best = { cost: reached + lastStretch(length), node }
+        for (let edge = firstEdge[node]; edge < firstEdge[node + 1]; edge++) {
+          if (!(edgeFlags[edge] & bit)) continue
+          const next = edgeTarget[edge]
+          const { along, metres: away } = project(node, next, to, lngScale)
+          if (away > end.metres + SLACK_METRES) continue
+          const total = reached + stepCost(metres(node, next, lngScale) * along, edgeFlags[edge]) + lastStretch(away)
+          if (total < best.cost) best = { cost: total, node, joint: pointAlong(node, next, along) }
+        }
         return false
       })
-      return best.node < 0 ? null : routeTo(best.node, from, to, lngScale)
+      if (best.cost === Infinity) return null
+
+      const nodes = best.node < 0 ? [] : nodesTo(best.node).map(positionOf)
+      const path = [from, pointAlong(start.from, start.to, start.along), ...nodes, best.joint, to]
+      let distance = 0
+      for (let i = 1; i < path.length; i++) distance += flatMetres(path[i - 1], path[i], lngScale)
+      return { distanceKm: distance / 1000, path }
     },
 
     nearest(from, targets, mode) {
-      const start = nearestNode(graph, from, MODE_BITS[mode])
-      if (start < 0) return null
+      const bit = MODE_BITS[mode]
       const lngScale = Math.cos((from.lat * Math.PI) / 180)
-      // Targets bucketed into ATTACH_CELL squares, so each node only measures to the targets around it.
+      const start = closestRoadPoint(from, bit, lngScale)
+      if (start === null || targets.length === 0) return null
+      // Closest by distance in either mode, so the order matches the distances shown.
+      const stepCost: StepCost = (length) => length
       const cellKey = (row: number, col: number) => row * 100_000 + col
       const buckets = new Map<number, number[]>()
-      targets.forEach((target, index) => {
-        const key = cellKey(Math.floor(target.lat / ATTACH_CELL), Math.floor(target.lng / ATTACH_CELL))
+      targets.forEach(({ position }, index) => {
+        const key = cellKey(Math.floor(position.lat / PLACE_CELL), Math.floor(position.lng / PLACE_CELL))
         const bucket = buckets.get(key)
         if (bucket === undefined) buckets.set(key, [index])
         else bucket.push(index)
       })
-      let best = { metres: Infinity, target: -1 }
-      // Closest by distance in either mode, so the order matches the distances shown.
-      explore(start, mode, lngScale, (length) => length, () => 0, (node, reached) => {
-        // Nothing reached from here on can do better.
-        if (reached >= best.metres) return true
-        const row = Math.floor(lat[node] / UNITS_PER_DEGREE / ATTACH_CELL)
-        const col = Math.floor(lng[node] / UNITS_PER_DEGREE / ATTACH_CELL)
+      const roadMetres = (target: number) => {
+        const { position } = targets[target]
+        const key = `${bit},${position.lat},${position.lng}`
+        let found = closestRoadMetres.get(key)
+        if (found === undefined) {
+          found = closestRoadPoint(position, bit, lngScale)?.metres ?? Infinity
+          closestRoadMetres.set(key, found)
+        }
+        return found
+      }
+      const minFactor = Math.min(...targets.map(({ factor }) => factor))
+      let best = { cost: Infinity, target: -1 }
+      // `away` is how far the target is from the road where the trip would leave it.
+      const consider = (target: number, length: number, away: number) => {
+        const total = (length + away) * targets[target].factor
+        if (total >= best.cost) return
+        // A road this close will do whichever road is closest, which is slower to find.
+        if (away > SLACK_METRES && away > roadMetres(target) + SLACK_METRES) return
+        best = { cost: total, target }
+      }
+
+      // Targets on the road you're on, reached along it.
+      const startPosition = pointAlong(start.from, start.to, start.along)
+      const startRow = Math.floor(startPosition.lat / PLACE_CELL)
+      const startCol = Math.floor(startPosition.lng / PLACE_CELL)
+      for (let r = startRow - 1; r <= startRow + 1; r++) {
+        for (let c = startCol - 1; c <= startCol + 1; c++) {
+          for (const target of buckets.get(cellKey(r, c)) ?? []) {
+            const { along, metres: away } = project(start.from, start.to, targets[target].position, lngScale)
+            consider(target, costAlongStartRoad(start, along, bit, stepCost, lngScale), away)
+          }
+        }
+      }
+
+      explore(seedsFrom(start, bit, stepCost, lngScale), bit, lngScale, stepCost, () => 0, (node, reached) => {
+        if (reached * minFactor >= best.cost) return true
+        const row = Math.floor(lat[node] / UNITS_PER_DEGREE / PLACE_CELL)
+        const col = Math.floor(lng[node] / UNITS_PER_DEGREE / PLACE_CELL)
         for (let r = row - 1; r <= row + 1; r++) {
           for (let c = col - 1; c <= col + 1; c++) {
             for (const target of buckets.get(cellKey(r, c)) ?? []) {
-              const length = metresTo(node, targets[target], lngScale)
-              if (length > ATTACH_METRES) continue
-              if (reached + length < best.metres) best = { metres: reached + length, target }
+              for (let edge = firstEdge[node]; edge < firstEdge[node + 1]; edge++) {
+                if (!(edgeFlags[edge] & bit)) continue
+                const next = edgeTarget[edge]
+                const { along, metres: away } = project(node, next, targets[target].position, lngScale)
+                consider(target, reached + metres(node, next, lngScale) * along, away)
+              }
             }
           }
         }
@@ -418,32 +563,6 @@ function buildGrid(lat: Int32Array, lng: Int32Array, snapModes: Uint8Array) {
   const nextSlot = cellStart.slice()
   for (let node = 0; node < lat.length; node++) if (routable(node)) cellNodes[nextSlot[cellOf(node)]++] = node
   return { grid, cellStart, cellNodes }
-}
-
-// The closest node within SNAP_METRES that the travel mode can be snapped to, or -1.
-function nearestNode(graph: RoadGraph, point: LatLng, bit: number): number {
-  const { lat, lng, snapModes, grid, cellStart, cellNodes } = graph
-  const pointLat = point.lat * UNITS_PER_DEGREE
-  const pointLng = point.lng * UNITS_PER_DEGREE
-  const lngScale = Math.cos((point.lat * Math.PI) / 180)
-  const row = Math.floor((pointLat - grid.south) / CELL)
-  const col = Math.floor((pointLng - grid.west) / CELL)
-  let best = -1
-  let bestMetres = SNAP_METRES
-  for (let r = Math.max(row - 1, 0); r <= Math.min(row + 1, grid.rows - 1); r++) {
-    for (let c = Math.max(col - 1, 0); c <= Math.min(col + 1, grid.cols - 1); c++) {
-      const cell = r * grid.cols + c
-      for (let slot = cellStart[cell]; slot < cellStart[cell + 1]; slot++) {
-        const node = cellNodes[slot]
-        if (!(snapModes[node] & bit)) continue
-        const metres = Math.hypot((lng[node] - pointLng) * lngScale, lat[node] - pointLat) * METRES_PER_UNIT
-        if (metres >= bestMetres) continue
-        best = node
-        bestMetres = metres
-      }
-    }
-  }
-  return best
 }
 
 function flatMetres(a: LatLng, b: LatLng, lngScale: number): number {

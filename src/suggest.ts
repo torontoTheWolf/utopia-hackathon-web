@@ -1,6 +1,6 @@
 import type { Emotion } from './emotions'
 import type { LatLng } from './geo'
-import { PLACE_KINDS, PLACES_FOR_EMOTION, type Place, type PlaceKindId } from './places'
+import { DISTANCE_FACTORS, PLACE_KINDS, PLACES_FOR_EMOTION, type Place, type PlaceKindId } from './places'
 import { parseRoute, type FetchDeps, type Route, type TravelMode } from './route'
 
 export type PlaceSuggestion = { place: Place; route: Route | null }
@@ -28,7 +28,12 @@ export async function suggestPlace(
 
 export function suggestUrl(emotion: Emotion, from: LatLng, mode: TravelMode, exclude: readonly string[]): string {
   const params = new URLSearchParams({
-    kinds: PLACES_FOR_EMOTION[emotion].join(','),
+    kinds: PLACES_FOR_EMOTION[emotion]
+      .map((kind) => {
+        const factor = DISTANCE_FACTORS[emotion]?.[kind]
+        return factor === undefined ? kind : `${kind}:${factor}`
+      })
+      .join(','),
     lat: String(from.lat),
     lng: String(from.lng),
     radiusKm: String(SEARCH_RADIUS_KM),

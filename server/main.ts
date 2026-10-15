@@ -16,6 +16,7 @@ const INDEX_VERSION = 3
 const MAX_RADIUS_KM = 50
 const MAX_ROUTE_KM = 50
 const REQUESTS_PER_MINUTE = 300
+const MAX_FACTOR = 10
 
 const pbfPath = process.argv[2] ?? DEFAULT_EXTRACT
 let index: PlaceIndex
@@ -107,34 +108,39 @@ function serveRoute(params: URLSearchParams, response: ServerResponse): void {
   send(response, 200, routeJson(route))
 }
 
-// The nearest place of any of the kinds by the travel mode, with the route there, skipping the place ids in `exclude`.
-// Answers 404 when there is none within radiusKm.
+// The place of any of the kinds that is closest by road for the travel mode, with the route there, skipping the place
+// ids in `exclude`. A kind written as `cafe:2` counts as twice as far away. Answers 404 when no place within radiusKm
+// can be reached by road.
 function serveSuggestion(params: URLSearchParams, request: IncomingMessage, response: ServerResponse): void {
-  const kinds = [...new Set((params.get('kinds') ?? '').split(','))]
+  const kinds = new Map(
+    (params.get('kinds') ?? '').split(',').map((item) => {
+      const [kind, factor = '1'] = item.split(':')
+      return [kind, toNumber(factor)]
+    }),
+  )
   const center = toLatLng(params.get('lat'), params.get('lng'))
   const radiusKm = toNumber(params.get('radiusKm'))
   const mode = params.get('mode') ?? ''
   const exclude = new Set(params.get('exclude')?.split(',') ?? [])
   if (
-    !kinds.every((kind) => Object.hasOwn(PLACE_KINDS, kind)) ||
+    // Written so that NaN fails the factor and radius checks.
+    ![...kinds].every(([kind, factor]) => Object.hasOwn(PLACE_KINDS, kind) && factor > 0 && factor <= MAX_FACTOR) ||
     center === null ||
     !(radiusKm > 0 && radiusKm <= MAX_RADIUS_KM) ||
     !Object.hasOwn(TRAVEL_MODES, mode)
   ) {
-    return send(response, 400, { error: `Expected kinds, lat, lng, radiusKm up to ${MAX_RADIUS_KM} and a mode` })
+    return send(response, 400, {
+      error: `Expected kinds, each with a factor up to ${MAX_FACTOR}, lat, lng, radiusKm up to ${MAX_RADIUS_KM} and a mode`,
+    })
   }
-  const candidates = (kinds as PlaceKindId[]).flatMap((kind) =>
-    placesNear(index, kind, center, radiusKm)
+  const candidates = [...kinds].flatMap(([kind, factor]) =>
+    placesNear(index, kind as PlaceKindId, center, radiusKm)
       .filter((place) => !exclude.has(place.id))
-      .map((place) => ({ ...place, kind })),
+      .map((place) => ({ ...place, kind, factor })),
   )
-  if (candidates.length === 0) return send(response, 404, { error: 'No places' })
-  const nearest = router.nearest(center, candidates.map(({ position }) => position), mode as TravelMode)
-  // Places that no road reaches are still suggested, nearest in a straight line first.
-  const place =
-    nearest !== null
-      ? candidates[nearest]
-      : candidates.reduce((best, next) => (distanceKm(center, next.position) < distanceKm(center, best.position) ? next : best))
+  const nearest = router.nearest(center, candidates, mode as TravelMode)
+  if (nearest === null) return send(response, 404, { error: 'No places that roads reach' })
+  const place = candidates[nearest]
   // The same route /api/route gives, so it doesn't change when the app asks for it again.
   const route = router.route(center, place.position, mode as TravelMode)
   const languages = preferredLanguages(request.headers['accept-language'])

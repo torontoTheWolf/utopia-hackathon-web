@@ -73,6 +73,14 @@ export const PLACES_FOR_EMOTION: Record<Emotion, readonly PlaceKindId[]> = {
   ],
 }
 
+// How far away a kind of place counts as for an emotion, as a multiple of its distance by road. Above 1, the kind is
+// suggested less often, and below 1 more often.
+export const DISTANCE_FACTORS: { readonly [E in Emotion]?: Partial<Record<PlaceKindId, number>> } = {
+  Happy: { marketplace: 2 },
+  Angry: { temple: 0.8 },
+  Sad: { cafe: 2 },
+}
+
 // `id` is the OpenStreetMap element, such as n123 for a node.
 export type Place = { id: string; name: string; position: LatLng; kind: PlaceKindId }
 
