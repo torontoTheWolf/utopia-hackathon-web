@@ -24,6 +24,16 @@ The first start takes about a minute and a half to index the places and build th
 
 Place names follow the browser's language when the map has a name in that language. Routes ignore turn restrictions, so a drive can be slightly shorter than the real one.
 
+### Share the API with the live site
+
+The live site has no API of its own. To serve it from this machine, install [`cloudflared`](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/) (`sudo pacman -S cloudflared` on Arch) and run:
+
+```
+npm run share
+```
+
+It starts the API unless `npm run dev` already has, and opens a Cloudflare quick tunnel to it. A quick tunnel gets a new `*.trycloudflare.com` address every time, so the script writes the address into the `/api` rewrite in `vercel.json`, commits only that file, and pushes the branch. The live site uses this machine once Vercel has redeployed, in a minute or two, and until the script stops. Visitors' locations then reach this machine, through Cloudflare. The API refuses searches wider than 50 km and routes longer than 50 km, and allows each visitor 300 requests a minute.
+
 ## Deploy to Vercel
 
 1. Import the repository in Vercel. The build command comes from `vercel.json`.
