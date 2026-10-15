@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useEffectEvent, useState } from 'react'
 import type { Emotion } from './emotions'
 import type { LatLng, LocationState } from './geo'
-import { distanceKm, findPlace, type Place } from './places'
+import { distanceKm, type Place } from './places'
+import type { Route, TravelMode } from './route'
+import { suggestPlace } from './suggest'
 
 export type Suggestion =
   | { status: 'idle' }
@@ -12,12 +14,17 @@ export type Suggestion =
   | { status: 'failed'; emotion: Emotion }
   | { status: 'noLocation'; emotion: Emotion }
 
-export type Spot = { origin: 'suggested'; position: LatLng; name: string } | { origin: 'tapped'; position: LatLng }
+// A suggested spot comes with its route for `mode`, from where you were.
+export type Spot =
+  | { origin: 'suggested'; position: LatLng; name: string; route: { mode: TravelMode; from: LatLng; route: Route | null } }
+  | { origin: 'tapped'; position: LatLng }
 
 type Search = { status: 'idle' } | { status: 'pending'; emotion: Emotion } | Extract<Suggestion, { status: 'found' | 'none' | 'failed' }>
 
 // The local places API answers in a few milliseconds, so results wait this long to not appear the instant you tap.
 const MIN_SEARCH_MS = 150
+// The most places remembered as already suggested, which keeps requests short.
+const MAX_SEEN = 100
 
 // Settles the same way as `promise`, but no sooner than `ms` from now.
 function atLeast<T>(ms: number, promise: Promise<T>): Promise<T> {
@@ -45,25 +52,37 @@ function toSuggestion(search: Search, location: LocationState): Suggestion {
   }
 }
 
-export function useSpot(location: LocationState) {
+// Suggests the closest place first, and the next closest each time the same emotion is picked again.
+export function useSpot(location: LocationState, mode: TravelMode) {
   const [search, setSearch] = useState<Search>({ status: 'idle' })
   const [spot, setSpot] = useState<Spot | null>(null)
+  const [seen, setSeen] = useState<{ emotion: Emotion | null; ids: readonly string[] }>({ emotion: null, ids: [] })
   const located = location.status === 'located'
 
   const runSearch = useEffectEvent((signal: AbortSignal) => {
     if (search.status !== 'pending' || location.status !== 'located') return
     const { emotion } = search
     const from = location.position
-    atLeast(MIN_SEARCH_MS, findPlace(emotion, from, { fetch, random: Math.random, signal })).then(
-      (place) => {
+    const deps = { fetch, signal }
+    const exclude = seen.emotion === emotion ? seen.ids : []
+    const next = async () => {
+      const found = await suggestPlace(emotion, from, mode, exclude, deps)
+      if (found !== null || exclude.length === 0) return { found, skipped: exclude }
+      // Every place nearby has been suggested, so start again from the closest.
+      return { found: await suggestPlace(emotion, from, mode, [], deps), skipped: [] }
+    }
+    atLeast(MIN_SEARCH_MS, next()).then(
+      ({ found, skipped }) => {
         if (signal.aborted) return
-        if (place === null) {
+        if (found === null) {
           setSearch({ status: 'none', emotion })
           setSpot(withoutSuggestedSpot)
           return
         }
+        const { place, route } = found
+        setSeen({ emotion, ids: [...skipped, place.id].slice(-MAX_SEEN) })
         setSearch({ status: 'found', emotion, place, distanceKm: distanceKm(from, place.position) })
-        setSpot({ origin: 'suggested', position: place.position, name: place.name })
+        setSpot({ origin: 'suggested', position: place.position, name: place.name, route: { mode, from, route } })
       },
       () => {
         if (signal.aborted) return

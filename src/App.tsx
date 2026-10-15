@@ -61,8 +61,8 @@ export default function App() {
   const [mapOpen, setMapOpen] = useState(false)
   const filterRef = useRef<HTMLDialogElement>(null)
   const { location, locate } = useCurrentPosition()
-  const { spot, suggestion, suggest, tapSpot } = useSpot(location)
   const [travelMode, setTravelMode] = useState<TravelMode>('foot')
+  const { spot, suggestion, suggest, tapSpot } = useSpot(location, travelMode)
   const route = useRoute(location, spot, travelMode)
   const gotIt = entered !== null && entered.emotion === emotion && entered.answers.every((answer, index) => answer === answers[index])
 

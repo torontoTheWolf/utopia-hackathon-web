@@ -5,11 +5,12 @@ import { readOsmPbf, type Tags } from './osmPbf.ts'
 // `name` plus any `name:<language>` tags, with the keys lowercased.
 export type Names = Tags
 
-export type IndexedPlace = { names: Names; position: LatLng }
+// `id` is the OpenStreetMap element: n, w or r for node, way or relation, then its number.
+export type IndexedPlace = { id: string; names: Names; position: LatLng }
 
 export type PlaceIndex = Record<PlaceKindId, IndexedPlace[]>
 
-type Area = { kinds: PlaceKindId[]; names: Names; rings: (readonly number[])[] }
+type Area = { id: string; kinds: PlaceKindId[]; names: Names; rings: (readonly number[])[] }
 
 const KIND_IDS = Object.keys(PLACE_KINDS) as PlaceKindId[]
 
@@ -20,13 +21,13 @@ export function buildPlaceIndex(pbfPath: string): PlaceIndex {
   const memberRefs = new Map<number, readonly number[]>()
   const relationAreas: { area: Area; wayIds: number[] }[] = []
   readOsmPbf(pbfPath, {
-    relation(_id, members, tags) {
+    relation(id, members, tags) {
       if (tags.type !== 'multipolygon') return
       const kinds = kindsOf(tags)
       if (kinds.length === 0) return
-      const wayIds = members.filter((member) => member.type === 'way' && member.role !== 'inner').map(({ id }) => id)
-      for (const id of wayIds) memberRefs.set(id, [])
-      relationAreas.push({ area: { kinds, names: namesOf(tags), rings: [] }, wayIds })
+      const wayIds = members.filter((member) => member.type === 'way' && member.role !== 'inner').map((member) => member.id)
+      for (const wayId of wayIds) memberRefs.set(wayId, [])
+      relationAreas.push({ area: { id: `r${id}`, kinds, names: namesOf(tags), rings: [] }, wayIds })
     },
   })
 
@@ -34,7 +35,7 @@ export function buildPlaceIndex(pbfPath: string): PlaceIndex {
     way(id, refs, tags) {
       if (memberRefs.has(id)) memberRefs.set(id, refs)
       const kinds = kindsOf(tags)
-      if (kinds.length > 0) areas.push({ kinds, names: namesOf(tags), rings: [refs] })
+      if (kinds.length > 0) areas.push({ id: `w${id}`, kinds, names: namesOf(tags), rings: [refs] })
     },
   })
   for (const { area, wayIds } of relationAreas) {
@@ -50,15 +51,15 @@ export function buildPlaceIndex(pbfPath: string): PlaceIndex {
       if (coordinates.has(id)) coordinates.set(id, { lat, lng })
       const kinds = kindsOf(tags)
       if (kinds.length === 0) return
-      const place = { names: namesOf(tags), position: { lat, lng } }
+      const place = { id: `n${id}`, names: namesOf(tags), position: { lat, lng } }
       for (const kind of kinds) index[kind].push(place)
     },
   })
 
-  for (const { kinds, names, rings } of areas) {
+  for (const { id, kinds, names, rings } of areas) {
     const position = centroid(rings.map((ring) => ring.flatMap((ref) => coordinates.get(ref) ?? [])))
     if (position === null) continue
-    for (const kind of kinds) index[kind].push({ names, position })
+    for (const kind of kinds) index[kind].push({ id, names, position })
   }
   return index
 }

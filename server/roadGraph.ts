@@ -63,6 +63,11 @@ const SNAP_METRES = 1000
 const MIN_NETWORK_NODES = 1000
 // Stops a search for an unreachable place before it walks the whole country.
 const MAX_SETTLED = 1_000_000
+// A place counts as reached from any road node this close to it. 0.005° is about 550 m, so the 3×3 cells around a
+// node hold every place within ATTACH_METRES of it.
+const ATTACH_METRES = 500
+const ATTACH_CELL = 0.005
+const WALK_METRES_PER_SECOND = 5 / 3.6
 
 // Bump when buildRoadGraph or the file layout changes, so old caches are rebuilt.
 const GRAPH_VERSION = 1
@@ -170,7 +175,14 @@ function readEdges(pbfPath: string): Edges {
   return { lat, lng, firstEdge, edgeTarget, edgeFlags }
 }
 
-export function createRouter(graph: RoadGraph): (from: LatLng, to: LatLng, mode: TravelMode) => Route | null {
+export type Router = {
+  route: (from: LatLng, to: LatLng, mode: TravelMode) => Route | null
+  // The index of the target that is closest by road for the mode, counting the last stretch from the road. Targets
+  // more than ATTACH_METRES from a road for the mode aren't found.
+  nearest: (from: LatLng, targets: readonly LatLng[], mode: TravelMode) => number | null
+}
+
+export function createRouter(graph: RoadGraph): Router {
   const { lat, lng, firstEdge, edgeTarget, edgeFlags } = graph
   const nodeCount = lat.length
   // Reused by every search. A node's cost and parent only count when its stamp matches the current search.
@@ -180,17 +192,24 @@ export function createRouter(graph: RoadGraph): (from: LatLng, to: LatLng, mode:
   const heap = new MinHeap()
   let search = 0
 
-  return (from, to, mode) => {
-    const bit = MODE_BITS[mode]
-    const start = nearestNode(graph, from, bit)
-    const goal = nearestNode(graph, to, bit)
-    if (start < 0 || goal < 0) return null
-    // Over the few kilometres of a route the earth is flat enough to measure with one longitude scale.
-    const lngScale = Math.cos((from.lat * Math.PI) / 180)
-    const metres = (a: number, b: number) => Math.hypot((lng[a] - lng[b]) * lngScale, lat[a] - lat[b]) * METRES_PER_UNIT
-    // Walks are the shortest, drives the quickest at each road's speed.
-    const toGoal = mode === 'foot' ? (node: number) => metres(node, goal) : (node: number) => metres(node, goal) / MAX_CAR_METRES_PER_SECOND
+  const positionOf = (node: number): LatLng => ({ lat: lat[node] / UNITS_PER_DEGREE, lng: lng[node] / UNITS_PER_DEGREE })
+  // Over the few kilometres of a route the earth is flat enough to measure with one longitude scale.
+  const metres = (a: number, b: number, lngScale: number) =>
+    Math.hypot((lng[a] - lng[b]) * lngScale, lat[a] - lat[b]) * METRES_PER_UNIT
+  const metresTo = (node: number, point: LatLng, lngScale: number) =>
+    Math.hypot((lng[node] - point.lng * UNITS_PER_DEGREE) * lngScale, lat[node] - point.lat * UNITS_PER_DEGREE) * METRES_PER_UNIT
 
+  // Reaches nodes in order of cost plus `toGoal`, an estimate of the cost left that is never too high. `reach` sees each
+  // node once at its lowest cost, and returns true to stop.
+  const explore = (
+    start: number,
+    mode: TravelMode,
+    lngScale: number,
+    stepCost: (metres: number, flags: number) => number,
+    toGoal: (node: number) => number,
+    reach: (node: number, cost: number) => boolean,
+  ): void => {
+    const bit = MODE_BITS[mode]
     search++
     heap.clear()
     stamp[start] = search
@@ -200,23 +219,13 @@ export function createRouter(graph: RoadGraph): (from: LatLng, to: LatLng, mode:
     for (let settled = 0; heap.size > 0 && settled < MAX_SETTLED; ) {
       const { node, cost: reached } = heap.pop()
       if (reached > cost[node]) continue
-      if (node === goal) {
-        const nodes: number[] = []
-        for (let at = goal; at !== -1; at = parent[at]) nodes.push(at)
-        nodes.reverse()
-        const path = [from, ...nodes.map((at) => ({ lat: lat[at] / UNITS_PER_DEGREE, lng: lng[at] / UNITS_PER_DEGREE })), to]
-        let distance = 0
-        for (let i = 1; i < path.length; i++) distance += flatMetres(path[i - 1], path[i], lngScale)
-        return { distanceKm: distance / 1000, path }
-      }
+      if (reach(node, reached)) return
       settled++
       for (let edge = firstEdge[node]; edge < firstEdge[node + 1]; edge++) {
         const flags = edgeFlags[edge]
         if (!(flags & bit)) continue
         const next = edgeTarget[edge]
-        const length = metres(node, next)
-        const step = mode === 'foot' ? length : length / (((flags >> 2) * 2) / 3.6)
-        const total = Math.fround(reached + step)
+        const total = Math.fround(reached + stepCost(metres(node, next, lngScale), flags))
         if (stamp[next] === search && total >= cost[next]) continue
         stamp[next] = search
         cost[next] = total
@@ -224,7 +233,75 @@ export function createRouter(graph: RoadGraph): (from: LatLng, to: LatLng, mode:
         heap.push(total + toGoal(next), next, total)
       }
     }
-    return null
+  }
+
+  // The route the last search took to `end`, with straight ends from `from` and to `to`.
+  const routeTo = (end: number, from: LatLng, to: LatLng, lngScale: number): Route => {
+    const nodes: number[] = []
+    for (let at = end; at !== -1; at = parent[at]) nodes.push(at)
+    const path = [from, ...nodes.reverse().map(positionOf), to]
+    let distance = 0
+    for (let i = 1; i < path.length; i++) distance += flatMetres(path[i - 1], path[i], lngScale)
+    return { distanceKm: distance / 1000, path }
+  }
+
+  return {
+    // Ends at whichever road node within SNAP_METRES of `to` makes the whole trip cheapest, not just the closest one,
+    // which can be a long way round. The last stretch, from the road to `to`, is on foot.
+    route(from, to, mode) {
+      const start = nearestNode(graph, from, MODE_BITS[mode])
+      // Without a road near `to`, the search would only stop after reaching everything it can.
+      if (start < 0 || nearestNode(graph, to, MODE_BITS[mode]) < 0) return null
+      const lngScale = Math.cos((from.lat * Math.PI) / 180)
+      // Walks are the shortest, in metres, and drives the quickest, in seconds at each road's speed.
+      const stepCost = mode === 'foot' ? (length: number) => length : (length: number, flags: number) => length / (((flags >> 2) * 2) / 3.6)
+      const lastStretch = mode === 'foot' ? (length: number) => length : (length: number) => length / WALK_METRES_PER_SECOND
+      const speed = mode === 'foot' ? 1 : MAX_CAR_METRES_PER_SECOND
+      const toGoal = (node: number) => metresTo(node, to, lngScale) / speed
+      let best = { cost: Infinity, node: -1 }
+      explore(start, mode, lngScale, stepCost, toGoal, (node, reached) => {
+        // Nodes come in order of cost plus toGoal, which never overestimates, so nothing later can do better.
+        if (reached + toGoal(node) >= best.cost) return true
+        const length = metresTo(node, to, lngScale)
+        if (length <= SNAP_METRES && reached + lastStretch(length) < best.cost) best = { cost: reached + lastStretch(length), node }
+        return false
+      })
+      return best.node < 0 ? null : routeTo(best.node, from, to, lngScale)
+    },
+
+    nearest(from, targets, mode) {
+      const start = nearestNode(graph, from, MODE_BITS[mode])
+      if (start < 0) return null
+      const lngScale = Math.cos((from.lat * Math.PI) / 180)
+      // Targets bucketed into ATTACH_CELL squares, so each node only measures to the targets around it.
+      const cellKey = (row: number, col: number) => row * 100_000 + col
+      const buckets = new Map<number, number[]>()
+      targets.forEach((target, index) => {
+        const key = cellKey(Math.floor(target.lat / ATTACH_CELL), Math.floor(target.lng / ATTACH_CELL))
+        const bucket = buckets.get(key)
+        if (bucket === undefined) buckets.set(key, [index])
+        else bucket.push(index)
+      })
+      let best = { metres: Infinity, target: -1 }
+      // Closest by distance in either mode, so the order matches the distances shown.
+      explore(start, mode, lngScale, (length) => length, () => 0, (node, reached) => {
+        // Nothing reached from here on can do better.
+        if (reached >= best.metres) return true
+        const row = Math.floor(lat[node] / UNITS_PER_DEGREE / ATTACH_CELL)
+        const col = Math.floor(lng[node] / UNITS_PER_DEGREE / ATTACH_CELL)
+        for (let r = row - 1; r <= row + 1; r++) {
+          for (let c = col - 1; c <= col + 1; c++) {
+            for (const target of buckets.get(cellKey(r, c)) ?? []) {
+              const length = metresTo(node, targets[target], lngScale)
+              if (length > ATTACH_METRES) continue
+              if (reached + length < best.metres) best = { metres: reached + length, target }
+            }
+          }
+        }
+        return false
+      })
+      return best.target < 0 ? null : best.target
+    },
   }
 }
 

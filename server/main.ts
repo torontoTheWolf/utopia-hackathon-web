@@ -3,15 +3,15 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { fileURLToPath } from 'node:url'
 import type { LatLng } from '../src/geo.ts'
 import { distanceKm, PLACE_KINDS, type PlaceKindId } from '../src/places.ts'
-import { TRAVEL_MODES, type TravelMode } from '../src/route.ts'
+import { TRAVEL_MODES, type Route, type TravelMode } from '../src/route.ts'
 import { buildPlaceIndex, placesNear, type Names, type PlaceIndex } from './placeIndex.ts'
-import { createRouter, loadRoadGraph } from './roadGraph.ts'
+import { createRouter, loadRoadGraph, type Router } from './roadGraph.ts'
 
 const HOST = '127.0.0.1'
 const PORT = 8787
 const DEFAULT_EXTRACT = fileURLToPath(new URL('../tmp/thailand-261014.osm.pbf', import.meta.url))
 // Bump when buildPlaceIndex changes what it stores, so old caches are rebuilt.
-const INDEX_VERSION = 2
+const INDEX_VERSION = 3
 // Limits for when the API is reachable from the internet. The app searches 7.5 km around you.
 const MAX_RADIUS_KM = 50
 const MAX_ROUTE_KM = 50
@@ -19,7 +19,7 @@ const REQUESTS_PER_MINUTE = 300
 
 const pbfPath = process.argv[2] ?? DEFAULT_EXTRACT
 let index: PlaceIndex
-let findRoute: ReturnType<typeof createRouter>
+let router: Router
 
 // When Vite starts the API, it keeps an IPC channel open until it exits.
 process.on('disconnect', () => process.exit())
@@ -33,6 +33,7 @@ const server = createServer((request, response) => {
   if (isOverLimit(request)) return send(response, 429, { error: 'Too many requests' }, { 'Retry-After': '60' })
   if (request.method === 'GET' && url.pathname === '/api/places') return servePlaces(url.searchParams, request, response)
   if (request.method === 'GET' && url.pathname === '/api/route') return serveRoute(url.searchParams, response)
+  if (request.method === 'GET' && url.pathname === '/api/suggest') return serveSuggestion(url.searchParams, request, response)
   send(response, 404, { error: 'Not found' })
 })
 
@@ -45,7 +46,7 @@ server.on('error', (error: NodeJS.ErrnoException) => {
 // Listening before indexing makes a second copy stop at once, and requests made while indexing wait for it instead of failing.
 server.listen(PORT, HOST, () => {
   index = loadIndex(pbfPath)
-  findRoute = createRouter(loadRoadGraph(pbfPath))
+  router = createRouter(loadRoadGraph(pbfPath))
   console.log(`Places API listening on http://${HOST}:${PORT}`)
 })
 
@@ -81,7 +82,8 @@ function servePlaces(params: URLSearchParams, request: IncomingMessage, response
     return send(response, 400, { error: `Expected kind, lat, lng and radiusKm up to ${MAX_RADIUS_KM}` })
   }
   const languages = preferredLanguages(request.headers['accept-language'])
-  const places = placesNear(index, kind as PlaceKindId, center, radiusKm).map(({ names, position }) => ({
+  const places = placesNear(index, kind as PlaceKindId, center, radiusKm).map(({ id, names, position }) => ({
+    id,
     name: localName(names, languages),
     lat: position.lat,
     lng: position.lng,
@@ -100,11 +102,52 @@ function serveRoute(params: URLSearchParams, response: ServerResponse): void {
     return send(response, 400, { error: 'Expected from and to as lat,lng and a mode' })
   }
   if (distanceKm(from, to) > MAX_ROUTE_KM) return send(response, 400, { error: `from and to must be within ${MAX_ROUTE_KM} km` })
-  const route = findRoute(from, to, mode as TravelMode)
+  const route = router.route(from, to, mode as TravelMode)
   if (route === null) return send(response, 404, { error: 'No route' })
+  send(response, 200, routeJson(route))
+}
+
+// The nearest place of any of the kinds by the travel mode, with the route there, skipping the place ids in `exclude`.
+// Answers 404 when there is none within radiusKm.
+function serveSuggestion(params: URLSearchParams, request: IncomingMessage, response: ServerResponse): void {
+  const kinds = [...new Set((params.get('kinds') ?? '').split(','))]
+  const center = toLatLng(params.get('lat'), params.get('lng'))
+  const radiusKm = toNumber(params.get('radiusKm'))
+  const mode = params.get('mode') ?? ''
+  const exclude = new Set(params.get('exclude')?.split(',') ?? [])
+  if (
+    !kinds.every((kind) => Object.hasOwn(PLACE_KINDS, kind)) ||
+    center === null ||
+    !(radiusKm > 0 && radiusKm <= MAX_RADIUS_KM) ||
+    !Object.hasOwn(TRAVEL_MODES, mode)
+  ) {
+    return send(response, 400, { error: `Expected kinds, lat, lng, radiusKm up to ${MAX_RADIUS_KM} and a mode` })
+  }
+  const candidates = (kinds as PlaceKindId[]).flatMap((kind) =>
+    placesNear(index, kind, center, radiusKm)
+      .filter((place) => !exclude.has(place.id))
+      .map((place) => ({ ...place, kind })),
+  )
+  if (candidates.length === 0) return send(response, 404, { error: 'No places' })
+  const nearest = router.nearest(center, candidates.map(({ position }) => position), mode as TravelMode)
+  // Places that no road reaches are still suggested, nearest in a straight line first.
+  const place =
+    nearest !== null
+      ? candidates[nearest]
+      : candidates.reduce((best, next) => (distanceKm(center, next.position) < distanceKm(center, best.position) ? next : best))
+  // The same route /api/route gives, so it doesn't change when the app asks for it again.
+  const route = router.route(center, place.position, mode as TravelMode)
+  const languages = preferredLanguages(request.headers['accept-language'])
+  send(response, 200, {
+    place: { id: place.id, name: localName(place.names, languages), kind: place.kind, ...place.position },
+    route: route && routeJson(route),
+  })
+}
+
+function routeJson({ distanceKm, path }: Route) {
   // Six decimals is about 10 cm, plenty for drawing.
   const round = (degrees: number) => Math.round(degrees * 1e6) / 1e6
-  send(response, 200, { distanceKm: route.distanceKm, path: route.path.map(({ lat, lng }) => [round(lat), round(lng)]) })
+  return { distanceKm, path: path.map(({ lat, lng }) => [round(lat), round(lng)]) }
 }
 
 function toLatLng(lat: string | null, lng: string | null): LatLng | null {

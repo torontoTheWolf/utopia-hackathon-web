@@ -9,7 +9,7 @@ export const TRAVEL_MODES: Record<TravelMode, { label: string; phrase: string }>
 
 export type Route = { distanceKm: number; path: LatLng[] }
 
-export type RouteDeps = {
+export type FetchDeps = {
   fetch: (url: string, init: { signal: AbortSignal }) => Promise<Response>
   signal: AbortSignal
 }
@@ -18,7 +18,7 @@ export type RouteDeps = {
 const ROUTE_API = '/api/route'
 
 // Resolves to null when there is no route, such as when either end is far from any road.
-export async function findRoute(from: LatLng, to: LatLng, mode: TravelMode, { fetch, signal }: RouteDeps): Promise<Route | null> {
+export async function findRoute(from: LatLng, to: LatLng, mode: TravelMode, { fetch, signal }: FetchDeps): Promise<Route | null> {
   const response = await fetch(routeUrl(from, to, mode), { signal })
   if (response.status === 404) return null
   if (!response.ok) throw new Error(`Route API responded ${response.status}`)
