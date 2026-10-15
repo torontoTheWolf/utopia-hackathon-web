@@ -3,6 +3,7 @@ import angryFace from './assets/ANGRY.png'
 import tiredFace from './assets/BORDEM.png'
 import happyFace from './assets/HAPPY.png'
 import hungryFace from './assets/HUNGER.png'
+import sadFace from './assets/SAD.png'
 import { EMOTIONS, type Emotion } from './emotions'
 import { useCurrentPosition } from './geo'
 import GpsMap from './GpsMap'
@@ -12,7 +13,7 @@ import { useSpot, type Suggestion } from './useSpot'
 
 const mapsApp = MAPS_APPS[preferredMapsApp(navigator.userAgent)]
 
-const FACES: Record<Emotion, string> = { Happy: happyFace, Angry: angryFace, Tired: tiredFace, Hungry: hungryFace }
+const FACES: Record<Emotion, string> = { Happy: happyFace, Angry: angryFace, Tired: tiredFace, Hungry: hungryFace, Sad: sadFace }
 
 type SuggestionOf<S extends Suggestion['status']> = Extract<Suggestion, { status: S }>
 
@@ -43,18 +44,16 @@ export default function App() {
   const [summary, setSummary] = useState('')
   const [entered, setEntered] = useState<{ emotion: Emotion | null; summary: string } | null>(null)
   const [mapOpen, setMapOpen] = useState(false)
-  const emotionsRef = useRef<HTMLFieldSetElement>(null)
   const filterRef = useRef<HTMLDialogElement>(null)
   const { location, locate } = useCurrentPosition()
-  const { spot, suggestion, suggest, tapSpot, clear } = useSpot(location)
+  const { spot, suggestion, suggest, tapSpot } = useSpot(location)
   const gotIt = entered !== null && entered.emotion === emotion && entered.summary === summary
-  const locked = emotion !== null
 
   return (
     <div className="page">
       <aside className="panel side" aria-hidden="true" />
       <main className="center">
-        <fieldset ref={emotionsRef} className="panel emotion" inert={mapOpen} aria-labelledby="emotion-heading">
+        <fieldset className="panel emotion" inert={mapOpen} aria-labelledby="emotion-heading">
           <div className="emotion-body">
             <p id="emotion-heading" className="emotion-heading">
               How are you feeling?
@@ -74,25 +73,8 @@ export default function App() {
                 </label>
               ))}
             </div>
-            <div className="emotion-status">
-              <div className="suggestion" role="status">
-                {suggestionText(suggestion).map((line) => (
-                  <p key={line}>{line}</p>
-                ))}
-              </div>
-              {emotion && (
-                <button
-                  className="button clear-button"
-                  type="button"
-                  onClick={() => {
-                    emotionsRef.current?.querySelector<HTMLInputElement>(':checked')?.focus()
-                    setEmotion(null)
-                    clear()
-                  }}
-                >
-                  Clear
-                </button>
-              )}
+            <div className="suggestion" role="status">
+              <p>{suggestionText(suggestion).join(' ')}</p>
             </div>
           </div>
         </fieldset>
@@ -109,16 +91,9 @@ export default function App() {
             id="summary"
             placeholder="Enter your own summary of how you feel here"
             value={summary}
-            disabled={locked}
-            aria-describedby={locked ? 'summary-locked' : undefined}
             onChange={(event) => setSummary(event.target.value)}
           />
           <div className="summary-submit">
-            {locked && (
-              <p id="summary-locked" className="summary-note">
-                Clear the emotion to write your own.
-              </p>
-            )}
             <p role="status">{gotIt && 'Got it'}</p>
             <button className="button primary" type="submit" disabled={emotion === null && summary.trim() === ''}>
               Enter

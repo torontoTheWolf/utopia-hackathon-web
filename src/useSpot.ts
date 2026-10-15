@@ -100,10 +100,5 @@ export function useSpot(location: LocationState) {
     setSpot({ origin: 'tapped', position })
   }, [])
 
-  const clear = useCallback(() => {
-    setSearch({ status: 'idle' })
-    setSpot(withoutSuggestedSpot)
-  }, [])
-
-  return { spot, suggestion: toSuggestion(search, location), suggest, tapSpot, clear }
+  return { spot, suggestion: toSuggestion(search, location), suggest, tapSpot }
 }

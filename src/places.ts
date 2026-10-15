@@ -23,6 +23,7 @@ export const PLACES_FOR_EMOTION: Record<Emotion, readonly PlaceKindId[]> = {
   Angry: ['sportsCentre', 'gym', 'park'],
   Tired: ['cafe', 'library', 'garden'],
   Hungry: ['restaurant', 'fastFood', 'cafe', 'marketplace'],
+  Sad: ['park', 'garden', 'cafe'],
 }
 
 export type Place = { name: string; position: LatLng; kind: PlaceKindId }
