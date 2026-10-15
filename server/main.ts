@@ -2,7 +2,7 @@ import { readFileSync, statSync, writeFileSync } from 'node:fs'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { fileURLToPath } from 'node:url'
 import type { LatLng } from '../src/geo.ts'
-import { PLACE_KINDS, type PlaceKindId } from '../src/places.ts'
+import { distanceKm, PLACE_KINDS, type PlaceKindId } from '../src/places.ts'
 import { TRAVEL_MODES, type TravelMode } from '../src/route.ts'
 import { buildPlaceIndex, placesNear, type Names, type PlaceIndex } from './placeIndex.ts'
 import { createRouter, loadRoadGraph } from './roadGraph.ts'
@@ -12,6 +12,10 @@ const PORT = 8787
 const DEFAULT_EXTRACT = fileURLToPath(new URL('../tmp/thailand-261014.osm.pbf', import.meta.url))
 // Bump when buildPlaceIndex changes what it stores, so old caches are rebuilt.
 const INDEX_VERSION = 2
+// Limits for when the API is reachable from the internet. The app searches 7.5 km around you.
+const MAX_RADIUS_KM = 50
+const MAX_ROUTE_KM = 50
+const REQUESTS_PER_MINUTE = 300
 
 const pbfPath = process.argv[2] ?? DEFAULT_EXTRACT
 let index: PlaceIndex
@@ -20,8 +24,13 @@ let findRoute: ReturnType<typeof createRouter>
 // When Vite starts the API, it keeps an IPC channel open until it exits.
 process.on('disconnect', () => process.exit())
 
+// Counts each client's requests in the current minute.
+let requestCounts = new Map<string, number>()
+setInterval(() => (requestCounts = new Map()), 60_000).unref()
+
 const server = createServer((request, response) => {
   const url = new URL(request.url ?? '/', `http://${HOST}`)
+  if (isOverLimit(request)) return send(response, 429, { error: 'Too many requests' }, { 'Retry-After': '60' })
   if (request.method === 'GET' && url.pathname === '/api/places') return servePlaces(url.searchParams, request, response)
   if (request.method === 'GET' && url.pathname === '/api/route') return serveRoute(url.searchParams, response)
   send(response, 404, { error: 'Not found' })
@@ -68,8 +77,8 @@ function servePlaces(params: URLSearchParams, request: IncomingMessage, response
   const center = toLatLng(params.get('lat'), params.get('lng'))
   const radiusKm = toNumber(params.get('radiusKm'))
   // Written so that NaN fails the radius check.
-  if (!Object.hasOwn(PLACE_KINDS, kind) || center === null || !(radiusKm > 0)) {
-    return send(response, 400, { error: 'Expected kind, lat, lng and radiusKm' })
+  if (!Object.hasOwn(PLACE_KINDS, kind) || center === null || !(radiusKm > 0 && radiusKm <= MAX_RADIUS_KM)) {
+    return send(response, 400, { error: `Expected kind, lat, lng and radiusKm up to ${MAX_RADIUS_KM}` })
   }
   const languages = preferredLanguages(request.headers['accept-language'])
   const places = placesNear(index, kind as PlaceKindId, center, radiusKm).map(({ names, position }) => ({
@@ -90,6 +99,7 @@ function serveRoute(params: URLSearchParams, response: ServerResponse): void {
   if (from === null || to === null || !Object.hasOwn(TRAVEL_MODES, mode)) {
     return send(response, 400, { error: 'Expected from and to as lat,lng and a mode' })
   }
+  if (distanceKm(from, to) > MAX_ROUTE_KM) return send(response, 400, { error: `from and to must be within ${MAX_ROUTE_KM} km` })
   const route = findRoute(from, to, mode as TravelMode)
   if (route === null) return send(response, 404, { error: 'No route' })
   // Six decimals is about 10 cm, plenty for drawing.
@@ -123,7 +133,16 @@ function localName(names: Names, languages: readonly string[]): string {
   return names.name
 }
 
-function send(response: ServerResponse, status: number, body: unknown): void {
-  response.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' })
+// Through Vercel and a tunnel, every request comes from localhost, and the visitor is the first forwarded address.
+function isOverLimit(request: IncomingMessage): boolean {
+  const forwarded = request.headers['x-forwarded-for']
+  const client = String(forwarded ?? '').split(',')[0].trim() || request.socket.remoteAddress || ''
+  const count = (requestCounts.get(client) ?? 0) + 1
+  requestCounts.set(client, count)
+  return count > REQUESTS_PER_MINUTE
+}
+
+function send(response: ServerResponse, status: number, body: unknown, headers: { [name: string]: string } = {}): void {
+  response.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', ...headers })
   response.end(JSON.stringify(body))
 }
