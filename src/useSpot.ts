@@ -17,7 +17,7 @@ export type Spot = { origin: 'suggested'; position: LatLng; name: string } | { o
 type Search = { status: 'idle' } | { status: 'pending'; emotion: Emotion } | Extract<Suggestion, { status: 'found' | 'none' | 'failed' }>
 
 // The local places API answers in a few milliseconds, so results wait this long to not appear the instant you tap.
-const MIN_SEARCH_MS = 250
+const MIN_SEARCH_MS = 150
 
 // Settles the same way as `promise`, but no sooner than `ms` from now.
 function atLeast<T>(ms: number, promise: Promise<T>): Promise<T> {
