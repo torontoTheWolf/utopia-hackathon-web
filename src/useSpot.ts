@@ -16,31 +16,6 @@ export type Spot = { origin: 'suggested'; position: LatLng; name: string } | { o
 
 type Search = { status: 'idle' } | { status: 'pending'; emotion: Emotion } | Extract<Suggestion, { status: 'found' | 'none' | 'failed' }>
 
-const NOMINATIM_GAP_MS = 1100
-let lastRequestAt = Number.NEGATIVE_INFINITY
-
-async function nominatimFetch(url: string, init: { signal: AbortSignal }): Promise<Response> {
-  const msUntilNextRequest = () => lastRequestAt + NOMINATIM_GAP_MS - performance.now()
-  init.signal.throwIfAborted()
-  for (let wait = msUntilNextRequest(); wait > 0; wait = msUntilNextRequest()) await sleep(wait, init.signal)
-  lastRequestAt = performance.now()
-  return fetch(url, init)
-}
-
-function sleep(ms: number, signal: AbortSignal): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(resolve, ms)
-    signal.addEventListener(
-      'abort',
-      () => {
-        clearTimeout(timer)
-        reject(signal.reason)
-      },
-      { once: true },
-    )
-  })
-}
-
 function withoutSuggestedSpot(spot: Spot | null): Spot | null {
   return spot?.origin === 'suggested' ? null : spot
 }
@@ -67,7 +42,7 @@ export function useSpot(location: LocationState) {
     if (search.status !== 'pending' || location.status !== 'located') return
     const { emotion } = search
     const from = location.position
-    findPlace(emotion, from, { fetch: nominatimFetch, random: Math.random, signal }).then(
+    findPlace(emotion, from, { fetch, random: Math.random, signal }).then(
       (place) => {
         if (signal.aborted) return
         if (place === null) {
