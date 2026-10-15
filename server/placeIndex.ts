@@ -67,9 +67,10 @@ export function placesNear(index: PlaceIndex, kind: PlaceKindId, center: LatLng,
   return index[kind].filter((place) => distanceKm(center, place.position) <= radiusKm)
 }
 
+// Only named places that anyone may go to.
 function kindsOf(tags: Tags): PlaceKindId[] {
-  if (tags.name === undefined || tags.name.trim() === '') return []
-  return KIND_IDS.filter((kind) => tags[PLACE_KINDS[kind].category] === PLACE_KINDS[kind].type)
+  if (tags.name === undefined || tags.name.trim() === '' || tags.access === 'private' || tags.access === 'no') return []
+  return KIND_IDS.filter((kind) => Object.entries(PLACE_KINDS[kind].tags).every(([key, value]) => tags[key] === value))
 }
 
 function namesOf(tags: Tags): Names {

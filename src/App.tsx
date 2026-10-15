@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import angryFace from './assets/ANGRY.png'
-import tiredFace from './assets/BORDEM.png'
+import boredFace from './assets/BORDEM.png'
 import happyFace from './assets/HAPPY.png'
 import hungryFace from './assets/HUNGER.png'
 import sadFace from './assets/SAD.png'
@@ -15,7 +15,7 @@ import { useSpot, type Suggestion } from './useSpot'
 
 const mapsApp = MAPS_APPS[preferredMapsApp(navigator.userAgent)]
 
-const FACES: Record<Emotion, string> = { Happy: happyFace, Angry: angryFace, Tired: tiredFace, Hungry: hungryFace, Sad: sadFace }
+const FACES: Record<Emotion, string> = { Happy: happyFace, Angry: angryFace, Bored: boredFace, Hungry: hungryFace, Sad: sadFace }
 
 const QUESTIONS = ['Question 1', 'Question 2', 'Question 3', 'Question 4', 'Question 5']
 
@@ -34,7 +34,7 @@ const SUGGESTION_TEXT: { [S in Suggestion['status']]: (suggestion: SuggestionOf<
       route.status === 'ready' && route.route !== null
         ? `${formatDistance(route.route.distanceKm)} away ${TRAVEL_MODES[route.mode].phrase}`
         : `${formatDistance(distanceKm)} away`
-    return [`Try ${place.name}, a ${PLACE_KINDS[place.kind].label} ${away}.`, `Tap ${emotion} again for another.`]
+    return [`Try ${place.name}, ${withArticle(PLACE_KINDS[place.kind].label)} ${away}.`, `Tap ${emotion} again for another.`]
   },
   none: () => ['No matching places nearby. Tap the map to choose a spot instead.'],
   failed: ({ emotion }) => [`Couldn't reach the places service. Tap ${emotion} to try again.`],
@@ -43,6 +43,10 @@ const SUGGESTION_TEXT: { [S in Suggestion['status']]: (suggestion: SuggestionOf<
 
 function suggestionText<S extends Suggestion['status']>(suggestion: SuggestionOf<S>, route: RouteState): readonly string[] {
   return SUGGESTION_TEXT[suggestion.status](suggestion, route)
+}
+
+function withArticle(noun: string): string {
+  return `${/^[aeiou]/i.test(noun) ? 'an' : 'a'} ${noun}`
 }
 
 function formatDistance(km: number): string {

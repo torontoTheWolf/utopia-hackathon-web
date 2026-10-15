@@ -11,7 +11,7 @@ const HOST = '127.0.0.1'
 const PORT = 8787
 const DEFAULT_EXTRACT = fileURLToPath(new URL('../tmp/thailand-261014.osm.pbf', import.meta.url))
 // Bump when buildPlaceIndex changes what it stores, so old caches are rebuilt.
-const INDEX_VERSION = 1
+const INDEX_VERSION = 2
 
 const pbfPath = process.argv[2] ?? DEFAULT_EXTRACT
 let index: PlaceIndex

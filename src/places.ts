@@ -1,29 +1,76 @@
 import type { Emotion } from './emotions'
 import type { LatLng } from './geo'
 
-type PlaceKind = { label: string; category: string; type: string }
+// A place of a kind has all of the kind's OpenStreetMap tags.
+type PlaceKind = { label: string; tags: { readonly [key: string]: string } }
 
 export const PLACE_KINDS = {
-  park: { label: 'park', category: 'leisure', type: 'park' },
-  garden: { label: 'garden', category: 'leisure', type: 'garden' },
-  beach: { label: 'beach', category: 'natural', type: 'beach' },
-  sportsCentre: { label: 'sports centre', category: 'leisure', type: 'sports_centre' },
-  gym: { label: 'gym', category: 'leisure', type: 'fitness_centre' },
-  cafe: { label: 'cafe', category: 'amenity', type: 'cafe' },
-  library: { label: 'library', category: 'amenity', type: 'library' },
-  restaurant: { label: 'restaurant', category: 'amenity', type: 'restaurant' },
-  fastFood: { label: 'fast food place', category: 'amenity', type: 'fast_food' },
-  marketplace: { label: 'market', category: 'amenity', type: 'marketplace' },
+  aquarium: { label: 'aquarium', tags: { tourism: 'aquarium' } },
+  attraction: { label: 'tourist attraction', tags: { tourism: 'attraction' } },
+  bakery: { label: 'bakery', tags: { shop: 'bakery' } },
+  beach: { label: 'beach', tags: { natural: 'beach' } },
+  bookshop: { label: 'bookshop', tags: { shop: 'books' } },
+  cafe: { label: 'cafe', tags: { amenity: 'cafe' } },
+  cinema: { label: 'cinema', tags: { amenity: 'cinema' } },
+  climbing: { label: 'climbing spot', tags: { sport: 'climbing' } },
+  fastFood: { label: 'fast food place', tags: { amenity: 'fast_food' } },
+  foodCourt: { label: 'food court', tags: { amenity: 'food_court' } },
+  gallery: { label: 'art gallery', tags: { tourism: 'gallery' } },
+  garden: { label: 'garden', tags: { leisure: 'garden' } },
+  gym: { label: 'gym', tags: { leisure: 'fitness_centre' } },
+  iceCream: { label: 'ice cream shop', tags: { amenity: 'ice_cream' } },
+  library: { label: 'library', tags: { amenity: 'library' } },
+  mall: { label: 'shopping mall', tags: { shop: 'mall' } },
+  marketplace: { label: 'market', tags: { amenity: 'marketplace' } },
+  massage: { label: 'massage shop', tags: { shop: 'massage' } },
+  museum: { label: 'museum', tags: { tourism: 'museum' } },
+  park: { label: 'park', tags: { leisure: 'park' } },
+  restaurant: { label: 'restaurant', tags: { amenity: 'restaurant' } },
+  runningTrack: { label: 'running track', tags: { leisure: 'track' } },
+  sportsCentre: { label: 'sports centre', tags: { leisure: 'sports_centre' } },
+  swimmingPool: { label: 'swimming pool', tags: { leisure: 'swimming_pool' } },
+  temple: { label: 'temple', tags: { amenity: 'place_of_worship', religion: 'buddhist' } },
+  themePark: { label: 'theme park', tags: { tourism: 'theme_park' } },
+  viewpoint: { label: 'viewpoint', tags: { tourism: 'viewpoint' } },
+  waterfall: { label: 'waterfall', tags: { waterway: 'waterfall' } },
+  waterPark: { label: 'water park', tags: { leisure: 'water_park' } },
+  zoo: { label: 'zoo', tags: { tourism: 'zoo' } },
 } as const satisfies Record<string, PlaceKind>
 
 export type PlaceKindId = keyof typeof PLACE_KINDS
 
 export const PLACES_FOR_EMOTION: Record<Emotion, readonly PlaceKindId[]> = {
-  Happy: ['park', 'garden', 'beach'],
-  Angry: ['sportsCentre', 'gym', 'park'],
-  Tired: ['cafe', 'library', 'garden'],
-  Hungry: ['restaurant', 'fastFood', 'cafe', 'marketplace'],
-  Sad: ['park', 'garden', 'cafe'],
+  // Somewhere to enjoy the good mood.
+  Happy: ['park', 'beach', 'viewpoint', 'waterfall', 'themePark', 'waterPark', 'zoo', 'aquarium', 'iceCream', 'marketplace'],
+  // Burn it off, then cool down.
+  Angry: ['gym', 'sportsCentre', 'swimmingPool', 'runningTrack', 'climbing', 'park', 'temple'],
+  // Something new to do or see.
+  Bored: ['cinema', 'museum', 'gallery', 'mall', 'bookshop', 'themePark', 'waterPark', 'zoo', 'aquarium', 'climbing', 'attraction', 'marketplace'],
+  Hungry: ['restaurant', 'fastFood', 'foodCourt', 'marketplace', 'bakery', 'cafe'],
+  // Nature, comfort, distraction and gentle exercise.
+  Sad: [
+    'park',
+    'garden',
+    'beach',
+    'viewpoint',
+    'waterfall',
+    'cafe',
+    'bakery',
+    'iceCream',
+    'massage',
+    'marketplace',
+    'museum',
+    'gallery',
+    'library',
+    'bookshop',
+    'cinema',
+    'zoo',
+    'aquarium',
+    'themePark',
+    'swimmingPool',
+    'sportsCentre',
+    'temple',
+  ],
 }
 
 export type Place = { name: string; position: LatLng; kind: PlaceKindId }
