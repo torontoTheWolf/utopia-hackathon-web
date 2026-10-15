@@ -1,7 +1,8 @@
 import * as L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
-import { useEffect, useRef } from 'react'
+import { useEffect, useEffectEvent, useRef } from 'react'
 import type { LatLng, LocationState } from './geo'
+import type { Spot } from './useSpot'
 
 const TILE_URL = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png'
 const NEW_TAB = 'target="_blank" rel="noopener noreferrer"'
@@ -9,6 +10,9 @@ const ATTRIBUTION = `&copy; <a href="https://www.openstreetmap.org/copyright" ${
 const LEAFLET_PREFIX = `<a href="https://leafletjs.com" ${NEW_TAB}>Leaflet</a>`
 const BLUE = '#1a73e8'
 const MAGENTA = '#ff00dc'
+const SPOT_ZOOM = 15
+const MAX_FIT_ZOOM = 17
+const MARKER_ROOM = 32
 
 const LOCATION_TEXT: Record<LocationState['status'], { circle: string | null; notice: string | null }> = {
   locating: { circle: 'Finding you…', notice: null },
@@ -23,13 +27,13 @@ const LOCATION_TEXT: Record<LocationState['status'], { circle: string | null; no
 type Props = {
   location: LocationState
   locate: () => void
-  spot: LatLng | null
-  onSpotChange: (spot: LatLng) => void
+  spot: Spot | null
+  onTap: (position: LatLng) => void
   open: boolean
   onOpenChange: (open: boolean) => void
 }
 
-export default function GpsMap({ location, locate, spot, onSpotChange, open, onOpenChange }: Props) {
+export default function GpsMap({ location, locate, spot, onTap, open, onOpenChange }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<L.Map | null>(null)
   const overlayRef = useRef<L.LayerGroup | null>(null)
@@ -58,12 +62,12 @@ export default function GpsMap({ location, locate, spot, onSpotChange, open, onO
   useEffect(() => {
     const map = mapRef.current
     if (!map) return
-    const onClick = ({ latlng }: L.LeafletMouseEvent) => onSpotChange({ lat: latlng.lat, lng: latlng.lng })
+    const onClick = ({ latlng }: L.LeafletMouseEvent) => onTap({ lat: latlng.lat, lng: latlng.lng })
     map.on('click', onClick)
     return () => {
       map.off('click', onClick)
     }
-  }, [onSpotChange])
+  }, [onTap])
 
   useEffect(() => {
     if (location.status !== 'located' || centeredRef.current) return
@@ -81,7 +85,7 @@ export default function GpsMap({ location, locate, spot, onSpotChange, open, onO
         overlay,
       )
       if (spot) {
-        L.polyline([position, spot], {
+        L.polyline([position, spot.position], {
           color: '#000',
           weight: 3,
           dashArray: '6 8',
@@ -100,7 +104,7 @@ export default function GpsMap({ location, locate, spot, onSpotChange, open, onO
       }).addTo(overlay)
     }
     if (spot) {
-      L.circleMarker(spot, {
+      const marker = L.circleMarker(spot.position, {
         radius: 9,
         color: '#000',
         weight: 3,
@@ -109,11 +113,32 @@ export default function GpsMap({ location, locate, spot, onSpotChange, open, onO
         interactive: false,
         className: 'gps-spot',
       }).addTo(overlay)
+      if (spot.origin === 'suggested') {
+        marker.bindTooltip(spot.name, { permanent: true, direction: 'auto', offset: [12, 0], className: 'gps-spot-name' })
+      }
     }
   }, [location, spot])
 
+  const fitSuggestedSpot = useEffectEvent(() => {
+    const map = mapRef.current
+    if (!map || spot?.origin !== 'suggested') return
+    if (location.status !== 'located') {
+      map.setView(spot.position, SPOT_ZOOM)
+      return
+    }
+    const { x, y } = map.getSize()
+    // The collapsed map is a circle, so both points must sit inside its inscribed square.
+    const inset = Math.round((Math.min(x, y) * (1 - Math.SQRT1_2)) / 2) + MARKER_ROOM
+    map.fitBounds(L.latLngBounds(location.position, spot.position), { padding: [inset, inset], maxZoom: MAX_FIT_ZOOM })
+  })
+
+  useEffect(() => {
+    fitSuggestedSpot()
+  }, [spot])
+
   useEffect(() => {
     mapRef.current?.invalidateSize()
+    fitSuggestedSpot()
     if (open) closeButtonRef.current?.focus()
     else if (wasOpenRef.current) openButtonRef.current?.focus()
     wasOpenRef.current = open
