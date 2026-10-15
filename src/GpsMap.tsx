@@ -11,7 +11,6 @@ const BLUE = '#1a73e8'
 const MAGENTA = '#ff00dc'
 
 const LOCATION_TEXT: Record<LocationState['status'], { circle: string | null; notice: string | null }> = {
-  idle: { circle: 'Tap to find your location', notice: null },
   locating: { circle: 'Finding you…', notice: null },
   located: { circle: null, notice: null },
   denied: {
