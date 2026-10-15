@@ -7,7 +7,7 @@
   --locked: #ebebeb;
   --font: 'Playpen Sans Variable', system-ui, sans-serif;
   --border: 4px solid var(--ink);
-  --shadow: 6px 6px 0 var(--ink);
+  --shadow: 6px 6px 0 rgb(0 0 0 /0.35);
   --halo: 0 0 0 7px var(--paper);
   --radius: 16px;
   --tap: 40px;
@@ -15,6 +15,7 @@
   --gap: clamp(8px, 5.5vmin - 10px, 40px);
   --inset: clamp(6px, 2.6vmin - 2px, 20px);
   --tight: clamp(4px, 1.4vmin, 10px);
+  --legend-room: 12.5rem;
 
   color: var(--ink);
   font-family: var(--font);
@@ -118,25 +119,29 @@ body {
 
 /* The panel border sits on the wrapper, because Safari draws a fieldset's legend inside the fieldset's own top border. */
 .emotion fieldset {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  grid-template-rows: minmax(var(--tap), auto);
-  align-items: center;
-  gap: var(--tight);
   min-width: 0;
   margin: 0;
   padding: 0;
   border: 0;
 }
 
-/* Floated, so the legend is laid out as an ordinary grid item. */
 .emotion legend {
-  float: left;
   padding: 0;
+  line-height: var(--tap);
+}
+
+/* Every engine lays the legend out above the fieldset's content, so the content is pulled up to share the legend's line as its first row. */
+.emotion-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: minmax(var(--tap), auto);
+  align-items: center;
+  gap: var(--tight);
+  margin-top: calc(-1 * var(--tap));
 }
 
 .pills {
-  grid-column: 1 / -1;
+  grid-area: 2 / 1 / auto / -1;
   display: flex;
   flex-wrap: wrap;
   gap: var(--tight);
@@ -183,8 +188,9 @@ body {
 }
 
 @media (height < 500px) {
-  .emotion fieldset {
-    grid-template-columns: auto minmax(0, 1fr) auto;
+  /* The first column keeps the legend's text clear of the pills; "How are you feeling?" needs about 11.9rem in Playpen Sans. */
+  .emotion-body {
+    grid-template-columns: var(--legend-room) minmax(0, 1fr) auto;
   }
 
   .pills {
