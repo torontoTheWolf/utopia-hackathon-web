@@ -11,7 +11,7 @@ const NEW_TAB = 'target="_blank" rel="noopener noreferrer"'
 const ATTRIBUTION = `&copy; <a href="https://www.openstreetmap.org/copyright" ${NEW_TAB}>OpenStreetMap</a> contributors`
 const LEAFLET_PREFIX = `<a href="https://leafletjs.com" ${NEW_TAB}>Leaflet</a>`
 const BLUE = '#1a73e8'
-const GREEN = '#166534'
+const ACCENT = '#e4572e'
 const SPOT_ZOOM = 15
 const MAX_FIT_ZOOM = 17
 const MARKER_ROOM = 32
@@ -121,7 +121,7 @@ export default function GpsMap({ location, locate, spot, onTap, route, travelMod
         radius: 9,
         color: '#000',
         weight: 3,
-        fillColor: GREEN,
+        fillColor: ACCENT,
         fillOpacity: 1,
         interactive: false,
         className: 'gps-spot',
