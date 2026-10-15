@@ -44,12 +44,12 @@ body {
   margin: 0;
 }
 
-/* The mushroom strip along the bottom of the screen, in front of the side panels but behind .center, so it never covers a button or the full-screen map. Clicks pass through it anyway. */
+/* The mushroom strip along the bottom of the screen, behind everything but the page background, so it never covers a panel, a button or the full-screen map. Clicks pass through it anyway. */
 body::after {
   content: '';
   position: fixed;
   inset: auto 0 0;
-  z-index: 0;
+  z-index: -1;
   aspect-ratio: 1640 / 174;
   background: url('./assets/lowerbar.png') bottom / 100% auto no-repeat;
   pointer-events: none;
@@ -106,8 +106,6 @@ body::after {
 }
 
 .center {
-  position: relative;
-  z-index: 1;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   grid-template-rows: auto minmax(0, 1fr) auto;
