@@ -16,6 +16,18 @@ export type Spot = { origin: 'suggested'; position: LatLng; name: string } | { o
 
 type Search = { status: 'idle' } | { status: 'pending'; emotion: Emotion } | Extract<Suggestion, { status: 'found' | 'none' | 'failed' }>
 
+// The local places API answers in a few milliseconds, so results wait this long to not appear the instant you tap.
+const MIN_SEARCH_MS = 250
+
+// Settles the same way as `promise`, but no sooner than `ms` from now.
+function atLeast<T>(ms: number, promise: Promise<T>): Promise<T> {
+  const pause = new Promise((resolve) => setTimeout(resolve, ms))
+  return promise.then(
+    (value) => pause.then(() => value),
+    (error: unknown) => pause.then(() => Promise.reject(error)),
+  )
+}
+
 function withoutSuggestedSpot(spot: Spot | null): Spot | null {
   return spot?.origin === 'suggested' ? null : spot
 }
@@ -42,7 +54,7 @@ export function useSpot(location: LocationState) {
     if (search.status !== 'pending' || location.status !== 'located') return
     const { emotion } = search
     const from = location.position
-    findPlace(emotion, from, { fetch, random: Math.random, signal }).then(
+    atLeast(MIN_SEARCH_MS, findPlace(emotion, from, { fetch, random: Math.random, signal })).then(
       (place) => {
         if (signal.aborted) return
         if (place === null) {
