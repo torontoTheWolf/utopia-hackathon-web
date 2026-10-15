@@ -9,6 +9,8 @@ import { useCurrentPosition } from './geo'
 import GpsMap from './GpsMap'
 import { MAPS_APPS, preferredMapsApp } from './maps'
 import { PLACE_KINDS } from './places'
+import { TRAVEL_MODES, type TravelMode } from './route'
+import { useRoute, type RouteState } from './useRoute'
 import { useSpot, type Suggestion } from './useSpot'
 
 const mapsApp = MAPS_APPS[preferredMapsApp(navigator.userAgent)]
@@ -21,21 +23,26 @@ const DOTS = 2
 
 type SuggestionOf<S extends Suggestion['status']> = Extract<Suggestion, { status: S }>
 
-const SUGGESTION_TEXT: { [S in Suggestion['status']]: (suggestion: SuggestionOf<S>) => readonly string[] } = {
+const SUGGESTION_TEXT: { [S in Suggestion['status']]: (suggestion: SuggestionOf<S>, route: RouteState) => readonly string[] } = {
   idle: () => [],
   waiting: () => ['Finding a spot…'],
   searching: () => ['Finding a spot…'],
-  found: ({ emotion, place, distanceKm }) => [
-    `Try ${place.name}, a ${PLACE_KINDS[place.kind].label} ${formatDistance(distanceKm)} away.`,
-    `Tap ${emotion} again for another.`,
-  ],
+  found: ({ emotion, place, distanceKm }, route) => {
+    if (route.status === 'loading') return ['Finding a spot…']
+    // Without a route, the distance is in a straight line.
+    const away =
+      route.status === 'ready' && route.route !== null
+        ? `${formatDistance(route.route.distanceKm)} away ${TRAVEL_MODES[route.mode].phrase}`
+        : `${formatDistance(distanceKm)} away`
+    return [`Try ${place.name}, a ${PLACE_KINDS[place.kind].label} ${away}.`, `Tap ${emotion} again for another.`]
+  },
   none: () => ['No matching places nearby. Tap the map to choose a spot instead.'],
   failed: ({ emotion }) => [`Couldn't reach the places service. Tap ${emotion} to try again.`],
   noLocation: () => ['Allow location access to get a suggestion.'],
 }
 
-function suggestionText<S extends Suggestion['status']>(suggestion: SuggestionOf<S>): readonly string[] {
-  return SUGGESTION_TEXT[suggestion.status](suggestion)
+function suggestionText<S extends Suggestion['status']>(suggestion: SuggestionOf<S>, route: RouteState): readonly string[] {
+  return SUGGESTION_TEXT[suggestion.status](suggestion, route)
 }
 
 function formatDistance(km: number): string {
@@ -51,6 +58,8 @@ export default function App() {
   const filterRef = useRef<HTMLDialogElement>(null)
   const { location, locate } = useCurrentPosition()
   const { spot, suggestion, suggest, tapSpot } = useSpot(location)
+  const [travelMode, setTravelMode] = useState<TravelMode>('foot')
+  const route = useRoute(location, spot, travelMode)
   const gotIt = entered !== null && entered.emotion === emotion && entered.answers.every((answer, index) => answer === answers[index])
 
   return (
@@ -78,7 +87,7 @@ export default function App() {
               ))}
             </div>
             <div className="suggestion" role="status">
-              <p>{suggestionText(suggestion).join(' ')}</p>
+              <p>{suggestionText(suggestion, route).join(' ')}</p>
             </div>
           </div>
         </fieldset>
@@ -128,12 +137,15 @@ export default function App() {
           locate={locate}
           spot={spot}
           onTap={tapSpot}
+          route={route}
+          travelMode={travelMode}
+          onTravelModeChange={setTravelMode}
           open={mapOpen}
           onOpenChange={setMapOpen}
         />
         <div className="actions" inert={mapOpen}>
           {spot ? (
-            <a className="button primary large" href={mapsApp.directionsUrl(spot.position)} target="_blank" rel="noopener noreferrer">
+            <a className="button primary large" href={mapsApp.directionsUrl(spot.position, travelMode)} target="_blank" rel="noopener noreferrer">
               {`Open in ${mapsApp.label}`}
             </a>
           ) : (

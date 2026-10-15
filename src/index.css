@@ -392,8 +392,9 @@ body::after {
 
 .gps-slot {
   --credit-gap: clamp(8px, 1.4vmin, 12px);
-  /* The largest circle that still leaves room for the one-line credit (0.75rem text at line-height 1.4, plus 4px padding and 4px border). */
-  --circle: min(100cqw, 100cqh - 1.05rem - 8px - var(--credit-gap));
+  --switch: 2rem;
+  /* The largest circle that still leaves room for the travel switch and the one-line credit (0.75rem text at line-height 1.4, plus 4px padding and 4px border). */
+  --circle: min(100cqw, 100cqh - var(--switch) - 1.05rem - 8px - 2 * var(--credit-gap));
 
   grid-area: map;
   display: grid;
@@ -552,6 +553,49 @@ body::after {
 
 .gps-credit a {
   color: inherit;
+}
+
+/* Walk or drive: a pair of radio buttons drawn as one switch. */
+.travel-mode {
+  display: flex;
+  height: var(--switch);
+  border: 3px solid var(--ink);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--paper);
+  box-shadow: 4px 4px 0 var(--ink);
+  font-size: 0.875rem;
+  font-weight: 700;
+}
+
+.travel-mode label {
+  display: grid;
+  place-items: center;
+  padding: 0 14px;
+  cursor: pointer;
+}
+
+.travel-mode label + label {
+  border-left: 3px solid var(--ink);
+}
+
+.travel-mode label:has(:checked) {
+  background: var(--button);
+}
+
+.travel-mode:has(:focus-visible) {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Over the open map, centred above Leaflet's attribution line. */
+.gps.is-open > .travel-mode {
+  position: absolute;
+  bottom: 32px;
+  left: 50%;
+  z-index: 1;
+  height: var(--tap);
+  translate: -50% 0;
 }
 
 .actions {

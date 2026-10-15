@@ -2,6 +2,8 @@ import * as L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { useEffect, useEffectEvent, useRef } from 'react'
 import type { LatLng, LocationState } from './geo'
+import { TRAVEL_MODES, type TravelMode } from './route'
+import type { RouteState } from './useRoute'
 import type { Spot } from './useSpot'
 
 const TILE_URL = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png'
@@ -29,11 +31,14 @@ type Props = {
   locate: () => void
   spot: Spot | null
   onTap: (position: LatLng) => void
+  route: RouteState
+  travelMode: TravelMode
+  onTravelModeChange: (mode: TravelMode) => void
   open: boolean
   onOpenChange: (open: boolean) => void
 }
 
-export default function GpsMap({ location, locate, spot, onTap, open, onOpenChange }: Props) {
+export default function GpsMap({ location, locate, spot, onTap, route, travelMode, onTravelModeChange, open, onOpenChange }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<L.Map | null>(null)
   const overlayRef = useRef<L.LayerGroup | null>(null)
@@ -87,7 +92,12 @@ export default function GpsMap({ location, locate, spot, onTap, open, onOpenChan
       L.circle(position, { radius: accuracy, color: BLUE, weight: 1, fillOpacity: 0.15, interactive: false }).addTo(
         overlay,
       )
-      if (spot) {
+      if (spot && route.status === 'ready' && route.route !== null) {
+        // A white edge keeps the route readable over the roads it follows.
+        L.polyline(route.route.path, { color: '#fff', weight: 8, interactive: false }).addTo(overlay)
+        L.polyline(route.route.path, { color: '#000', weight: 4, interactive: false, className: 'gps-route' }).addTo(overlay)
+      } else if (spot && route.status === 'ready') {
+        // Without a route, a dashed straight line still points the way.
         L.polyline([position, spot.position], {
           color: '#000',
           weight: 3,
@@ -120,7 +130,7 @@ export default function GpsMap({ location, locate, spot, onTap, open, onOpenChan
         marker.bindTooltip(spot.name, { permanent: true, direction: 'auto', offset: [12, 0], className: 'gps-spot-name' })
       }
     }
-  }, [location, spot])
+  }, [location, spot, route])
 
   const fitSuggestedSpot = useEffectEvent(() => {
     const map = mapRef.current
@@ -133,12 +143,15 @@ export default function GpsMap({ location, locate, spot, onTap, open, onOpenChan
     const { x, y } = map.getSize()
     // The collapsed map is a circle, so both points must sit inside its inscribed square.
     const inset = Math.round((Math.min(x, y) * (1 - Math.SQRT1_2)) / 2) + MARKER_ROOM
-    map.fitBounds(L.latLngBounds(location.position, spot.position), { padding: [inset, inset], maxZoom: MAX_FIT_ZOOM })
+    const path = route.status === 'ready' && route.route !== null ? route.route.path : []
+    map.fitBounds(L.latLngBounds([location.position, spot.position, ...path]), { padding: [inset, inset], maxZoom: MAX_FIT_ZOOM })
   })
 
+  // Fits again when a route arrives for a new spot or travel mode, but not when moving fetches a new route.
+  const routedMode = route.status === 'ready' ? route.mode : null
   useEffect(() => {
     fitSuggestedSpot()
-  }, [spot])
+  }, [spot, routedMode])
 
   useEffect(() => {
     fitSuggestedSpot()
@@ -160,6 +173,7 @@ export default function GpsMap({ location, locate, spot, onTap, open, onOpenChan
 
   return (
     <div className="gps-slot">
+      {!open && <TravelModeSwitch mode={travelMode} onChange={onTravelModeChange} />}
       <div
         className={open ? 'gps is-open' : 'gps'}
         role={open ? 'dialog' : undefined}
@@ -191,6 +205,7 @@ export default function GpsMap({ location, locate, spot, onTap, open, onOpenChan
             {text.circle && <span>{text.circle}</span>}
           </button>
         )}
+        {open && <TravelModeSwitch mode={travelMode} onChange={onTravelModeChange} />}
       </div>
       {!open && (
         <p className="gps-credit">
@@ -201,6 +216,25 @@ export default function GpsMap({ location, locate, spot, onTap, open, onOpenChan
           contributors
         </p>
       )}
+    </div>
+  )
+}
+
+function TravelModeSwitch({ mode, onChange }: { mode: TravelMode; onChange: (mode: TravelMode) => void }) {
+  return (
+    <div className="travel-mode" role="radiogroup" aria-label="Travel by">
+      {(Object.keys(TRAVEL_MODES) as TravelMode[]).map((option) => (
+        <label key={option}>
+          <input
+            className="visually-hidden"
+            type="radio"
+            name="travel-mode"
+            checked={mode === option}
+            onChange={() => onChange(option)}
+          />
+          {TRAVEL_MODES[option].label}
+        </label>
+      ))}
     </div>
   )
 }

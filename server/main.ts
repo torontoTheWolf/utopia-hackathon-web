@@ -1,9 +1,11 @@
 import { readFileSync, statSync, writeFileSync } from 'node:fs'
-import { createServer, type ServerResponse } from 'node:http'
+import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { fileURLToPath } from 'node:url'
 import type { LatLng } from '../src/geo.ts'
 import { PLACE_KINDS, type PlaceKindId } from '../src/places.ts'
+import { TRAVEL_MODES, type TravelMode } from '../src/route.ts'
 import { buildPlaceIndex, placesNear, type Names, type PlaceIndex } from './placeIndex.ts'
+import { createRouter, loadRoadGraph } from './roadGraph.ts'
 
 const HOST = '127.0.0.1'
 const PORT = 8787
@@ -13,22 +15,16 @@ const INDEX_VERSION = 1
 
 const pbfPath = process.argv[2] ?? DEFAULT_EXTRACT
 let index: PlaceIndex
+let findRoute: ReturnType<typeof createRouter>
 
 // When Vite starts the API, it keeps an IPC channel open until it exits.
 process.on('disconnect', () => process.exit())
 
 const server = createServer((request, response) => {
   const url = new URL(request.url ?? '/', `http://${HOST}`)
-  if (request.method !== 'GET' || url.pathname !== '/api/places') return send(response, 404, { error: 'Not found' })
-  const query = parseQuery(url.searchParams)
-  if (query === null) return send(response, 400, { error: 'Expected kind, lat, lng and radiusKm' })
-  const languages = preferredLanguages(request.headers['accept-language'])
-  const places = placesNear(index, query.kind, query.center, query.radiusKm).map(({ names, position }) => ({
-    name: localName(names, languages),
-    lat: position.lat,
-    lng: position.lng,
-  }))
-  send(response, 200, places)
+  if (request.method === 'GET' && url.pathname === '/api/places') return servePlaces(url.searchParams, request, response)
+  if (request.method === 'GET' && url.pathname === '/api/route') return serveRoute(url.searchParams, response)
+  send(response, 404, { error: 'Not found' })
 })
 
 server.on('error', (error: NodeJS.ErrnoException) => {
@@ -40,6 +36,7 @@ server.on('error', (error: NodeJS.ErrnoException) => {
 // Listening before indexing makes a second copy stop at once, and requests made while indexing wait for it instead of failing.
 server.listen(PORT, HOST, () => {
   index = loadIndex(pbfPath)
+  findRoute = createRouter(loadRoadGraph(pbfPath))
   console.log(`Places API listening on http://${HOST}:${PORT}`)
 })
 
@@ -66,14 +63,44 @@ function loadIndex(path: string): PlaceIndex {
   return built
 }
 
-function parseQuery(params: URLSearchParams): { kind: PlaceKindId; center: LatLng; radiusKm: number } | null {
+function servePlaces(params: URLSearchParams, request: IncomingMessage, response: ServerResponse): void {
   const kind = params.get('kind') ?? ''
-  const [lat, lng, radiusKm] = ['lat', 'lng', 'radiusKm'].map((name) => toNumber(params.get(name)))
-  // Written so that NaN fails every check.
-  if (!Object.hasOwn(PLACE_KINDS, kind) || !(Math.abs(lat) <= 90) || !(Math.abs(lng) <= 180) || !(radiusKm > 0)) {
-    return null
+  const center = toLatLng(params.get('lat'), params.get('lng'))
+  const radiusKm = toNumber(params.get('radiusKm'))
+  // Written so that NaN fails the radius check.
+  if (!Object.hasOwn(PLACE_KINDS, kind) || center === null || !(radiusKm > 0)) {
+    return send(response, 400, { error: 'Expected kind, lat, lng and radiusKm' })
   }
-  return { kind: kind as PlaceKindId, center: { lat, lng }, radiusKm }
+  const languages = preferredLanguages(request.headers['accept-language'])
+  const places = placesNear(index, kind as PlaceKindId, center, radiusKm).map(({ names, position }) => ({
+    name: localName(names, languages),
+    lat: position.lat,
+    lng: position.lng,
+  }))
+  send(response, 200, places)
+}
+
+// Answers 404 when the two points aren't joined by roads for the mode, or either is more than a kilometre from one.
+function serveRoute(params: URLSearchParams, response: ServerResponse): void {
+  const [from, to] = ['from', 'to'].map((name) => {
+    const [lat = null, lng = null, ...rest] = params.get(name)?.split(',') ?? []
+    return rest.length === 0 ? toLatLng(lat, lng) : null
+  })
+  const mode = params.get('mode') ?? ''
+  if (from === null || to === null || !Object.hasOwn(TRAVEL_MODES, mode)) {
+    return send(response, 400, { error: 'Expected from and to as lat,lng and a mode' })
+  }
+  const route = findRoute(from, to, mode as TravelMode)
+  if (route === null) return send(response, 404, { error: 'No route' })
+  // Six decimals is about 10 cm, plenty for drawing.
+  const round = (degrees: number) => Math.round(degrees * 1e6) / 1e6
+  send(response, 200, { distanceKm: route.distanceKm, path: route.path.map(({ lat, lng }) => [round(lat), round(lng)]) })
+}
+
+function toLatLng(lat: string | null, lng: string | null): LatLng | null {
+  const position = { lat: toNumber(lat), lng: toNumber(lng) }
+  // Written so that NaN fails both checks.
+  return Math.abs(position.lat) <= 90 && Math.abs(position.lng) <= 180 ? position : null
 }
 
 function toNumber(value: string | null): number {
