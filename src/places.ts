@@ -11,7 +11,8 @@ export const PLACE_KINDS = {
   gym: { label: 'gym', query: 'gym', category: 'leisure', type: 'fitness_centre' },
   cafe: { label: 'cafe', query: 'cafe', category: 'amenity', type: 'cafe' },
   library: { label: 'library', query: 'library', category: 'amenity', type: 'library' },
-  communityCentre: { label: 'community centre', query: 'community centre', category: 'amenity', type: 'community_centre' },
+  restaurant: { label: 'restaurant', query: 'restaurant', category: 'amenity', type: 'restaurant' },
+  fastFood: { label: 'fast food place', query: 'fast food', category: 'amenity', type: 'fast_food' },
   marketplace: { label: 'market', query: 'marketplace', category: 'amenity', type: 'marketplace' },
 } as const satisfies Record<string, PlaceKind>
 
@@ -21,7 +22,7 @@ export const PLACES_FOR_EMOTION: Record<Emotion, readonly PlaceKindId[]> = {
   Happy: ['park', 'garden', 'beach'],
   Angry: ['sportsCentre', 'gym', 'park'],
   Tired: ['cafe', 'library', 'garden'],
-  Lonely: ['communityCentre', 'cafe', 'library', 'marketplace'],
+  Hungry: ['restaurant', 'fastFood', 'cafe', 'marketplace'],
 }
 
 export type Place = { name: string; position: LatLng; kind: PlaceKindId }

@@ -15,7 +15,6 @@
   --gap: clamp(8px, 5.5vmin - 10px, 40px);
   --inset: clamp(6px, 2.6vmin - 2px, 20px);
   --tight: clamp(4px, 1.4vmin, 10px);
-  --legend-room: 12.5rem;
 
   color: var(--ink);
   font-family: var(--font);
@@ -90,7 +89,7 @@ body {
   box-shadow: var(--shadow);
 }
 
-.emotion legend,
+.emotion-heading,
 .summary label {
   font-size: 1.125rem;
   font-weight: 700;
@@ -115,70 +114,85 @@ body {
 
 .emotion {
   grid-area: emotion;
-}
-
-/* The panel border sits on the wrapper, because Safari draws a fieldset's legend inside the fieldset's own top border. */
-.emotion fieldset {
-  min-width: 0;
   margin: 0;
-  padding: 0;
-  border: 0;
+  container-type: inline-size;
 }
 
-.emotion legend {
-  padding: 0;
-  line-height: var(--tap);
+/* On phones the panel keeps the full width, which the faces and heading need. */
+@media (width >= 700px) {
+  .emotion {
+    margin: 0 4%;
+  }
 }
 
-/* Every engine lays the legend out above the fieldset's content, so the content is pulled up to share the legend's line as its first row. */
+/* The faces sit in the last column, against the panel's right edge, so nothing else on the row can move them, and the row is at least as tall as Clear, so it keeps its height when Clear appears. Their size leaves 7rem for the heading, which wraps "How are you / feeling?" onto two lines on narrow screens. */
 .emotion-body {
+  --face-gap: calc(var(--tight) * 1.6);
+  --face: calc(clamp(var(--tap), min(8.4vh, (100cqi - 7rem - 2 * var(--tight) - 3 * var(--face-gap)) / 4), 84px) - 5px);
+
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   grid-template-rows: minmax(var(--tap), auto);
   align-items: center;
   gap: var(--tight);
-  margin-top: calc(-1 * var(--tap));
 }
 
-.pills {
-  grid-area: 2 / 1 / auto / -1;
+.emotion-heading {
+  margin: 0;
+  line-height: 1.2;
+}
+
+.faces {
+  grid-area: 1 / 3;
   display: flex;
-  flex-wrap: wrap;
-  gap: var(--tight);
+  gap: var(--face-gap);
 }
 
-.pill {
+.face {
   position: relative;
-  display: flex;
-  align-items: center;
-  min-height: var(--tap);
-  padding: clamp(4px, 1vmin, 8px) clamp(10px, 2vmin, 18px);
+  display: grid;
+  width: var(--face);
+  aspect-ratio: 1;
+  padding: 2px;
   border: 3px solid var(--ink);
-  border-radius: 999px;
+  border-radius: 12px;
   background: var(--paper);
-  font-weight: 700;
   cursor: pointer;
 }
 
-.pill:has(:checked) {
-  background: var(--button);
+.face img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
 }
 
-.pill:has(:focus-visible) {
+/* The shadow marks the chosen face without changing its size. */
+.face:has(:checked) {
+  background: var(--button);
+  box-shadow: 3px 3px 0 var(--ink);
+}
+
+.face:has(:focus-visible) {
   outline: 3px solid var(--accent);
   outline-offset: 2px;
 }
 
-.clear-button {
-  grid-area: 1 / -2;
-  font-size: 0.875rem;
+.emotion-status {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: var(--tight) 12px;
+}
+
+/* Out of the grid flow when there is nothing to show, so the live region stays rendered without adding a row. */
+.emotion-status:not(:has(p, button)) {
+  position: absolute;
 }
 
 .suggestion {
-  grid-column: 1 / -1;
+  flex: 1 1 0;
 }
 
-/* Out of the grid flow when empty, so the live region stays rendered without adding a row. */
 .suggestion:empty {
   position: absolute;
 }
@@ -187,14 +201,23 @@ body {
   margin: 0;
 }
 
+.clear-button {
+  flex: none;
+  font-size: 0.875rem;
+}
+
 @media (height < 500px) {
-  /* The first column keeps the legend's text clear of the pills; "How are you feeling?" needs about 11.9rem in Playpen Sans. */
-  .emotion-body {
-    grid-template-columns: var(--legend-room) minmax(0, 1fr) auto;
+  /* Short screens are wide, so Clear fits on the faces' row, just left of them, and the suggestion keeps to one line of height. */
+  .emotion-status {
+    display: contents;
   }
 
-  .pills {
+  .clear-button {
     grid-area: 1 / 2;
+  }
+
+  .suggestion {
+    grid-column: 1 / -1;
   }
 
   .suggestion p {

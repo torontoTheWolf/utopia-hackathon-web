@@ -1,4 +1,8 @@
 import { useRef, useState } from 'react'
+import angryFace from './assets/ANGRY.png'
+import tiredFace from './assets/BORDEM.png'
+import happyFace from './assets/HAPPY.png'
+import hungryFace from './assets/HUNGER.png'
 import { EMOTIONS, type Emotion } from './emotions'
 import { useCurrentPosition } from './geo'
 import GpsMap from './GpsMap'
@@ -7,6 +11,8 @@ import { PLACE_KINDS } from './places'
 import { useSpot, type Suggestion } from './useSpot'
 
 const mapsApp = MAPS_APPS[preferredMapsApp(navigator.userAgent)]
+
+const FACES: Record<Emotion, string> = { Happy: happyFace, Angry: angryFace, Tired: tiredFace, Hungry: hungryFace }
 
 type SuggestionOf<S extends Suggestion['status']> = Extract<Suggestion, { status: S }>
 
@@ -48,23 +54,30 @@ export default function App() {
     <div className="page">
       <aside className="panel side" aria-hidden="true" />
       <main className="center">
-        <div className="panel emotion" inert={mapOpen}>
-          <fieldset ref={emotionsRef}>
-            <legend>How are you feeling?</legend>
-            <div className="emotion-body">
-              <div className="pills">
-                {EMOTIONS.map((option) => (
-                  <label key={option} className="pill">
-                    <input
-                      className="visually-hidden"
-                      type="radio"
-                      name="emotion"
-                      checked={emotion === option}
-                      onChange={() => setEmotion(option)}
-                      onClick={() => suggest(option)}
-                    />
-                    {option}
-                  </label>
+        <fieldset ref={emotionsRef} className="panel emotion" inert={mapOpen} aria-labelledby="emotion-heading">
+          <div className="emotion-body">
+            <p id="emotion-heading" className="emotion-heading">
+              How are you feeling?
+            </p>
+            <div className="faces">
+              {EMOTIONS.map((option) => (
+                <label key={option} className="face" title={option}>
+                  <input
+                    className="visually-hidden"
+                    type="radio"
+                    name="emotion"
+                    checked={emotion === option}
+                    onChange={() => setEmotion(option)}
+                    onClick={() => suggest(option)}
+                  />
+                  <img src={FACES[option]} alt={option} />
+                </label>
+              ))}
+            </div>
+            <div className="emotion-status">
+              <div className="suggestion" role="status">
+                {suggestionText(suggestion).map((line) => (
+                  <p key={line}>{line}</p>
                 ))}
               </div>
               {emotion && (
@@ -80,14 +93,9 @@ export default function App() {
                   Clear
                 </button>
               )}
-              <div className="suggestion" role="status">
-                {suggestionText(suggestion).map((line) => (
-                  <p key={line}>{line}</p>
-                ))}
-              </div>
             </div>
-          </fieldset>
-        </div>
+          </div>
+        </fieldset>
         <form
           className="panel summary"
           inert={mapOpen}
