@@ -1,4 +1,10 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "npx convex deploy --cmd 'npm run build'"
+  "buildCommand": "npx convex deploy --cmd 'npm run build'",
+  "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "https://ftp-lisa-sociology-prix.trycloudflare.com/api/:path*"
+    }
+  ]
 }
