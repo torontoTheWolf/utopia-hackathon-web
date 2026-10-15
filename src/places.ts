@@ -7,9 +7,6 @@ export const PLACE_KINDS = {
   park: { label: 'park', query: 'park', category: 'leisure', type: 'park' },
   garden: { label: 'garden', query: 'garden', category: 'leisure', type: 'garden' },
   beach: { label: 'beach', query: 'beach', category: 'natural', type: 'beach' },
-  cinema: { label: 'cinema', query: 'cinema', category: 'amenity', type: 'cinema' },
-  museum: { label: 'museum', query: 'museum', category: 'tourism', type: 'museum' },
-  viewpoint: { label: 'viewpoint', query: 'viewpoint', category: 'tourism', type: 'viewpoint' },
   sportsCentre: { label: 'sports centre', query: 'sports centre', category: 'leisure', type: 'sports_centre' },
   gym: { label: 'gym', query: 'gym', category: 'leisure', type: 'fitness_centre' },
   cafe: { label: 'cafe', query: 'cafe', category: 'amenity', type: 'cafe' },
@@ -22,7 +19,6 @@ export type PlaceKindId = keyof typeof PLACE_KINDS
 
 export const PLACES_FOR_EMOTION: Record<Emotion, readonly PlaceKindId[]> = {
   Happy: ['park', 'garden', 'beach'],
-  Excited: ['cinema', 'museum', 'viewpoint'],
   Angry: ['sportsCentre', 'gym', 'park'],
   Tired: ['cafe', 'library', 'garden'],
   Lonely: ['communityCentre', 'cafe', 'library', 'marketplace'],
@@ -37,31 +33,28 @@ export type SearchDeps = {
 }
 
 const NOMINATIM_SEARCH = 'https://nominatim.openstreetmap.org/search'
-const SEARCH_RADII_KM = [1.5, 5]
+const SEARCH_RADIUS_KM = 7.5
 const EARTH_RADIUS_KM = 6371
 const KM_PER_DEGREE = 111.32
 // Rounding the center to 2 decimals moves it by up to 0.005°, so the box grows by that much to still cover the radius around the true position.
 const ROUNDING_SLACK_DEGREES = 0.005
 
 export async function findPlace(emotion: Emotion, position: LatLng, { fetch, random, signal }: SearchDeps): Promise<Place | null> {
-  const kinds = shuffle(PLACES_FOR_EMOTION[emotion], random)
-  for (const radiusKm of SEARCH_RADII_KM) {
-    for (const kind of kinds) {
-      const response = await fetch(searchUrl(kind, position, radiusKm), { signal })
-      if (!response.ok) throw new Error(`Nominatim responded ${response.status}`)
-      const json: unknown = await response.json()
-      const nearby = parsePlaces(json, kind).filter((place) => distanceKm(position, place.position) <= radiusKm)
-      if (nearby.length > 0) return nearby[Math.floor(random() * nearby.length)]
-    }
+  for (const kind of shuffle(PLACES_FOR_EMOTION[emotion], random)) {
+    const response = await fetch(searchUrl(kind, position), { signal })
+    if (!response.ok) throw new Error(`Nominatim responded ${response.status}`)
+    const json: unknown = await response.json()
+    const nearby = parsePlaces(json, kind).filter((place) => distanceKm(position, place.position) <= SEARCH_RADIUS_KM)
+    if (nearby.length > 0) return nearby[Math.floor(random() * nearby.length)]
   }
   return null
 }
 
-export function searchUrl(kind: PlaceKindId, center: LatLng, radiusKm: number): string {
+export function searchUrl(kind: PlaceKindId, center: LatLng): string {
   const lat = Math.round(center.lat * 100) / 100
   const lng = Math.round(center.lng * 100) / 100
-  const latSpan = ceilTo2(radiusKm / KM_PER_DEGREE + ROUNDING_SLACK_DEGREES)
-  const lngSpan = ceilTo2(radiusKm / (KM_PER_DEGREE * Math.cos(toRadians(lat))) + ROUNDING_SLACK_DEGREES)
+  const latSpan = ceilTo2(SEARCH_RADIUS_KM / KM_PER_DEGREE + ROUNDING_SLACK_DEGREES)
+  const lngSpan = ceilTo2(SEARCH_RADIUS_KM / (KM_PER_DEGREE * Math.cos(toRadians(lat))) + ROUNDING_SLACK_DEGREES)
   const viewbox = [lng - lngSpan, lat + latSpan, lng + lngSpan, lat - latSpan].map((edge) => edge.toFixed(2)).join(',')
   const params = new URLSearchParams({ q: PLACE_KINDS[kind].query, format: 'jsonv2', limit: '40', bounded: '1', viewbox })
   return `${NOMINATIM_SEARCH}?${params}`

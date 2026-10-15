@@ -37,36 +37,57 @@ export default function App() {
   const [summary, setSummary] = useState('')
   const [entered, setEntered] = useState<{ emotion: Emotion | null; summary: string } | null>(null)
   const [mapOpen, setMapOpen] = useState(false)
+  const emotionsRef = useRef<HTMLFieldSetElement>(null)
   const filterRef = useRef<HTMLDialogElement>(null)
   const { location, locate } = useCurrentPosition()
-  const { spot, suggestion, suggest, tapSpot } = useSpot(location)
+  const { spot, suggestion, suggest, tapSpot, clear } = useSpot(location)
   const gotIt = entered !== null && entered.emotion === emotion && entered.summary === summary
+  const locked = emotion !== null
 
   return (
     <div className="page">
       <aside className="panel side" aria-hidden="true" />
       <main className="center">
-        <fieldset className="panel emotion" inert={mapOpen}>
-          <legend>How are you feeling?</legend>
-          {EMOTIONS.map((option) => (
-            <label key={option} className="pill">
-              <input
-                className="visually-hidden"
-                type="radio"
-                name="emotion"
-                checked={emotion === option}
-                onChange={() => setEmotion(option)}
-                onClick={() => suggest(option)}
-              />
-              {option}
-            </label>
-          ))}
-          <div className="suggestion" role="status">
-            {suggestionText(suggestion).map((line) => (
-              <p key={line}>{line}</p>
-            ))}
-          </div>
-        </fieldset>
+        <div className="panel emotion" inert={mapOpen}>
+          <fieldset ref={emotionsRef}>
+            <legend>How are you feeling?</legend>
+            <div className="emotion-body">
+              <div className="pills">
+                {EMOTIONS.map((option) => (
+                  <label key={option} className="pill">
+                    <input
+                      className="visually-hidden"
+                      type="radio"
+                      name="emotion"
+                      checked={emotion === option}
+                      onChange={() => setEmotion(option)}
+                      onClick={() => suggest(option)}
+                    />
+                    {option}
+                  </label>
+                ))}
+              </div>
+              {emotion && (
+                <button
+                  className="button clear-button"
+                  type="button"
+                  onClick={() => {
+                    emotionsRef.current?.querySelector<HTMLInputElement>(':checked')?.focus()
+                    setEmotion(null)
+                    clear()
+                  }}
+                >
+                  Clear
+                </button>
+              )}
+              <div className="suggestion" role="status">
+                {suggestionText(suggestion).map((line) => (
+                  <p key={line}>{line}</p>
+                ))}
+              </div>
+            </div>
+          </fieldset>
+        </div>
         <form
           className="panel summary"
           inert={mapOpen}
@@ -80,9 +101,16 @@ export default function App() {
             id="summary"
             placeholder="Enter your own summary of how you feel here"
             value={summary}
+            disabled={locked}
+            aria-describedby={locked ? 'summary-locked' : undefined}
             onChange={(event) => setSummary(event.target.value)}
           />
           <div className="summary-submit">
+            {locked && (
+              <p id="summary-locked" className="summary-note">
+                Clear the emotion to write your own.
+              </p>
+            )}
             <p role="status">{gotIt && 'Got it'}</p>
             <button className="button primary" type="submit" disabled={emotion === null && summary.trim() === ''}>
               Enter
@@ -103,12 +131,9 @@ export default function App() {
               {`Open in ${mapsApp.label}`}
             </a>
           ) : (
-            <>
-              <button className="button primary large" type="button" disabled>
-                Open in Maps
-              </button>
-              <p className="maps-note">Choose a spot on the map first</p>
-            </>
+            <button className="button primary large" type="button" disabled>
+              Pick an emotion or tap the map
+            </button>
           )}
           <button className="button large filter-button" type="button" onClick={() => filterRef.current?.showModal()}>
             Filter

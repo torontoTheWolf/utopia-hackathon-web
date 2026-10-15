@@ -52,7 +52,10 @@ export default function GpsMap({ location, locate, spot, onTap, open, onOpenChan
     mapRef.current = map
     overlayRef.current = L.layerGroup().addTo(map)
     centeredRef.current = false
+    const resizeObserver = new ResizeObserver(() => map.invalidateSize())
+    resizeObserver.observe(container)
     return () => {
+      resizeObserver.disconnect()
       map.remove()
       mapRef.current = null
       overlayRef.current = null
@@ -122,6 +125,7 @@ export default function GpsMap({ location, locate, spot, onTap, open, onOpenChan
   const fitSuggestedSpot = useEffectEvent(() => {
     const map = mapRef.current
     if (!map || spot?.origin !== 'suggested') return
+    map.invalidateSize()
     if (location.status !== 'located') {
       map.setView(spot.position, SPOT_ZOOM)
       return
@@ -137,7 +141,6 @@ export default function GpsMap({ location, locate, spot, onTap, open, onOpenChan
   }, [spot])
 
   useEffect(() => {
-    mapRef.current?.invalidateSize()
     fitSuggestedSpot()
     if (open) closeButtonRef.current?.focus()
     else if (wasOpenRef.current) openButtonRef.current?.focus()

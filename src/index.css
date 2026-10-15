@@ -4,13 +4,21 @@
   --accent: #ff00dc;
   --button: #ffd60a;
   --muted: #6b6b6b;
+  --locked: #ebebeb;
+  --font: 'Playpen Sans Variable', system-ui, sans-serif;
   --border: 4px solid var(--ink);
   --shadow: 6px 6px 0 var(--ink);
   --halo: 0 0 0 7px var(--paper);
   --radius: 16px;
+  --tap: 40px;
+  --pad: clamp(8px, 4vmin - 6px, 30px);
+  --gap: clamp(8px, 5.5vmin - 10px, 40px);
+  --inset: clamp(6px, 2.6vmin - 2px, 20px);
+  --tight: clamp(4px, 1.4vmin, 10px);
 
   color: var(--ink);
-  font-family: system-ui, sans-serif;
+  font-family: var(--font);
+  font-size: clamp(13px, 8.5px + 1.04vmin, 16px);
   line-height: 1.4;
 }
 
@@ -20,8 +28,16 @@
   box-sizing: border-box;
 }
 
+button,
+input,
+textarea {
+  font: inherit;
+}
+
 html {
   min-height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
   background: #000 url('./assets/BACKGROUND.png') center / cover no-repeat;
 }
 
@@ -46,10 +62,25 @@ body {
 
 .page {
   display: grid;
-  grid-template-columns: minmax(80px, 1fr) minmax(0, 5fr) minmax(80px, 1fr);
-  gap: 40px;
-  padding: 30px;
-  min-height: 100dvh;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  gap: var(--gap);
+  height: 100dvh;
+  padding: var(--pad);
+}
+
+.side {
+  display: none;
+}
+
+@media (width >= 1024px) and (min-aspect-ratio: 3 / 2) {
+  .page {
+    grid-template-columns: minmax(80px, 1fr) minmax(0, 5fr) minmax(80px, 1fr);
+  }
+
+  .side {
+    display: block;
+  }
 }
 
 .panel {
@@ -67,36 +98,56 @@ body {
 .center {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: auto minmax(0, 1fr) auto;
   grid-template-areas:
     'emotion emotion'
     'summary map'
     'actions actions';
-  align-content: space-between;
-  gap: 40px;
+  gap: var(--gap);
 }
 
 .emotion,
 .summary {
-  display: flex;
-  gap: 10px;
-  padding: 20px 24px;
+  min-width: 0;
+  padding: var(--inset) calc(var(--inset) * 1.2);
 }
 
 .emotion {
   grid-area: emotion;
-  flex-wrap: wrap;
-  margin: 0;
 }
 
+/* The panel border sits on the wrapper, because Safari draws a fieldset's legend inside the fieldset's own top border. */
+.emotion fieldset {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: minmax(var(--tap), auto);
+  align-items: center;
+  gap: var(--tight);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+/* Floated, so the legend is laid out as an ordinary grid item. */
 .emotion legend {
   float: left;
-  width: 100%;
   padding: 0;
+}
+
+.pills {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--tight);
 }
 
 .pill {
   position: relative;
-  padding: 8px 18px;
+  display: flex;
+  align-items: center;
+  min-height: var(--tap);
+  padding: clamp(4px, 1vmin, 8px) clamp(10px, 2vmin, 18px);
   border: 3px solid var(--ink);
   border-radius: 999px;
   background: var(--paper);
@@ -113,12 +164,16 @@ body {
   outline-offset: 2px;
 }
 
-.suggestion {
-  flex-basis: 100%;
-  margin-top: 4px;
+.clear-button {
+  grid-area: 1 / -2;
+  font-size: 0.875rem;
 }
 
-/* Out of the flex flow when empty, so the live region stays rendered without adding a row. */
+.suggestion {
+  grid-column: 1 / -1;
+}
+
+/* Out of the grid flow when empty, so the live region stays rendered without adding a row. */
 .suggestion:empty {
   position: absolute;
 }
@@ -127,43 +182,81 @@ body {
   margin: 0;
 }
 
+@media (height < 500px) {
+  .emotion fieldset {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+
+  .pills {
+    grid-area: 1 / 2;
+  }
+
+  .suggestion p {
+    display: inline;
+  }
+
+  .suggestion p + p::before {
+    content: ' ';
+  }
+}
+
 .summary {
   grid-area: summary;
+  display: flex;
   flex-direction: column;
-  min-height: 16rem;
+  gap: var(--tight);
 }
 
 .summary textarea {
   flex: 1;
-  min-height: 8rem;
-  padding: 12px;
+  min-height: 48px;
+  padding: clamp(6px, 1.5vmin, 12px);
   border: 3px solid var(--ink);
   border-radius: 0;
   color: inherit;
-  font: inherit;
+  /* iOS Safari zooms the page into any field whose text is smaller than 16px. */
+  font-size: 16px;
   resize: none;
+}
+
+.summary textarea:disabled {
+  border-color: var(--muted);
+  background: var(--locked);
+  color: var(--muted);
+  cursor: not-allowed;
 }
 
 .summary-submit {
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
   align-items: center;
-  gap: 12px;
+  gap: var(--tight) 12px;
 }
 
 .summary-submit p {
   margin: 0;
+}
+
+.summary-submit [role='status'] {
   font-weight: 700;
 }
 
+.summary-note {
+  flex: 1 1 0;
+  min-width: 9em;
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
 .button {
-  padding: 10px 16px;
+  min-height: var(--tap);
+  padding: clamp(4px, 1.2vmin, 10px) clamp(10px, 2vmin, 16px);
   border: 3px solid var(--ink);
   border-radius: var(--radius);
   background: var(--paper);
   box-shadow: 4px 4px 0 var(--ink);
   color: var(--ink);
-  font: inherit;
   font-weight: 700;
   text-align: center;
   text-decoration: none;
@@ -179,10 +272,10 @@ body {
 }
 
 .button.large {
-  padding: 24px;
+  padding: clamp(6px, 3vmin - 3px, 24px);
   border: var(--border);
   box-shadow: var(--shadow);
-  font-size: 1.25rem;
+  font-size: min(1.25rem, 1rem + 0.5vmin);
 }
 
 .button.large:focus-visible {
@@ -196,18 +289,22 @@ body {
 }
 
 .gps-slot {
+  --credit-gap: clamp(8px, 1.4vmin, 12px);
+  /* The largest circle that still leaves room for the one-line credit (0.75rem text at line-height 1.4, plus 4px padding and 4px border). */
+  --circle: min(100cqw, 100cqh - 1.05rem - 8px - var(--credit-gap));
+
   grid-area: map;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: var(--credit-gap);
+  container-type: size;
 }
 
 .gps {
   position: relative;
   isolation: isolate;
-  width: min(100%, 360px);
+  width: var(--circle);
   aspect-ratio: 1;
   overflow: hidden;
   border: var(--border);
@@ -243,6 +340,11 @@ body {
   outline-offset: -6px;
 }
 
+.gps-map.leaflet-container,
+.gps-map .leaflet-control-zoom a {
+  font-family: var(--font);
+}
+
 .gps:not(.is-open) .leaflet-control-container {
   display: none;
 }
@@ -257,7 +359,6 @@ body {
   border: 0;
   background: transparent;
   color: inherit;
-  font: inherit;
   cursor: pointer;
 }
 
@@ -316,9 +417,14 @@ body {
   border-radius: 0;
   box-shadow: none;
   color: var(--ink);
-  font: 700 0.875rem / 1.3 system-ui, sans-serif;
+  font: 700 0.875rem / 1.3 var(--font);
   text-align: center;
   white-space: normal;
+}
+
+/* Narrow enough that a name beside a marker near the middle still fits inside a small circle. */
+.gps:not(.is-open) .gps-spot-name {
+  max-width: min(12rem, var(--circle) * 0.4);
 }
 
 .leaflet-tooltip-left.gps-spot-name::before {
@@ -334,15 +440,11 @@ body {
   margin-left: auto;
 }
 
-.gps-credit,
-.maps-note {
+.gps-credit {
   margin: 0;
   padding: 2px 8px;
   border: 2px solid var(--ink);
   background: var(--paper);
-}
-
-.gps-credit {
   font-size: 0.75rem;
 }
 
@@ -354,12 +456,6 @@ body {
   grid-area: actions;
   display: grid;
   grid-template-columns: subgrid;
-  row-gap: 12px;
-}
-
-.maps-note {
-  grid-column: 1;
-  place-self: start;
 }
 
 .filter-button {
@@ -392,40 +488,6 @@ body {
   justify-content: flex-end;
 }
 
-@media (width < 720px) {
-  .page {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 24px;
-    padding: 24px 16px;
-  }
-
-  .side {
-    display: none;
-  }
-
-  .center {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-areas:
-      'emotion'
-      'summary'
-      'map'
-      'actions';
-    align-content: start;
-    gap: 28px;
-  }
-
-  .summary {
-    min-height: 14rem;
-  }
-
-  .gps {
-    width: min(100%, 320px);
-  }
-
-  .filter-button {
-    grid-area: auto;
-    justify-self: stretch;
-    width: auto;
-    margin-top: 16px;
-  }
+.panel.side { 
+  background: rgb(255 255 255 / 0.35); backdrop-filter: blur(6px);
 }

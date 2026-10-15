@@ -1,5 +1,6 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
+import '@fontsource-variable/playpen-sans'
 import './index.css'
 import { ConvexProvider, ConvexReactClient } from 'convex/react'
 import App from './App.tsx'

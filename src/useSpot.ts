@@ -41,6 +41,10 @@ function sleep(ms: number, signal: AbortSignal): Promise<void> {
   })
 }
 
+function withoutSuggestedSpot(spot: Spot | null): Spot | null {
+  return spot?.origin === 'suggested' ? null : spot
+}
+
 function toSuggestion(search: Search, location: LocationState): Suggestion {
   if (search.status !== 'pending') return search
   switch (location.status) {
@@ -63,13 +67,12 @@ export function useSpot(location: LocationState) {
     if (search.status !== 'pending' || location.status !== 'located') return
     const { emotion } = search
     const from = location.position
-    const dropSuggestedSpot = () => setSpot((current) => (current?.origin === 'suggested' ? null : current))
     findPlace(emotion, from, { fetch: nominatimFetch, random: Math.random, signal }).then(
       (place) => {
         if (signal.aborted) return
         if (place === null) {
           setSearch({ status: 'none', emotion })
-          dropSuggestedSpot()
+          setSpot(withoutSuggestedSpot)
           return
         }
         setSearch({ status: 'found', emotion, place, distanceKm: distanceKm(from, place.position) })
@@ -78,7 +81,7 @@ export function useSpot(location: LocationState) {
       () => {
         if (signal.aborted) return
         setSearch({ status: 'failed', emotion })
-        dropSuggestedSpot()
+        setSpot(withoutSuggestedSpot)
       },
     )
   })
@@ -97,5 +100,10 @@ export function useSpot(location: LocationState) {
     setSpot({ origin: 'tapped', position })
   }, [])
 
-  return { spot, suggestion: toSuggestion(search, location), suggest, tapSpot }
+  const clear = useCallback(() => {
+    setSearch({ status: 'idle' })
+    setSpot(withoutSuggestedSpot)
+  }, [])
+
+  return { spot, suggestion: toSuggestion(search, location), suggest, tapSpot, clear }
 }
