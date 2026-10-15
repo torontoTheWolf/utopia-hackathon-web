@@ -6,6 +6,7 @@
   --border: 4px solid var(--ink);
   --shadow: 6px 6px 0 var(--ink);
   --halo: 0 0 0 7px var(--paper);
+  --radius: 16px;
 
   color: var(--ink);
   font-family: system-ui, sans-serif;
@@ -32,6 +33,16 @@ body {
   outline-offset: 2px;
 }
 
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 .page {
   display: grid;
   grid-template-columns: minmax(80px, 1fr) minmax(0, 5fr) minmax(80px, 1fr);
@@ -46,7 +57,8 @@ body {
   box-shadow: var(--shadow);
 }
 
-.panel label {
+.emotion legend,
+.summary label {
   font-size: 1.125rem;
   font-weight: 700;
 }
@@ -57,7 +69,7 @@ body {
   grid-template-areas:
     'emotion emotion'
     'summary map'
-    'action .';
+    'actions actions';
   align-content: space-between;
   gap: 40px;
 }
@@ -65,27 +77,44 @@ body {
 .emotion,
 .summary {
   display: flex;
-  flex-direction: column;
   gap: 10px;
   padding: 20px 24px;
 }
 
 .emotion {
   grid-area: emotion;
+  flex-wrap: wrap;
+  margin: 0;
 }
 
-.emotion select {
-  width: min(100%, 24rem);
-  padding: 10px 12px;
+.emotion legend {
+  float: left;
+  width: 100%;
+  padding: 0;
+}
+
+.pill {
+  position: relative;
+  padding: 8px 18px;
   border: 3px solid var(--ink);
-  border-radius: 0;
+  border-radius: 999px;
   background: var(--paper);
-  color: inherit;
-  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.pill:has(:checked) {
+  background: var(--accent);
+}
+
+.pill:has(:focus-visible) {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .summary {
   grid-area: summary;
+  flex-direction: column;
   min-height: 16rem;
 }
 
@@ -98,6 +127,57 @@ body {
   color: inherit;
   font: inherit;
   resize: none;
+}
+
+.summary-submit {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 12px;
+}
+
+.summary-submit p {
+  margin: 0;
+  font-weight: 700;
+}
+
+.button {
+  padding: 10px 16px;
+  border: 3px solid var(--ink);
+  border-radius: var(--radius);
+  background: var(--paper);
+  box-shadow: 4px 4px 0 var(--ink);
+  color: var(--ink);
+  font: inherit;
+  font-weight: 700;
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.button:focus-visible {
+  box-shadow: var(--halo), 4px 4px 0 var(--ink);
+}
+
+.button.primary {
+  background: var(--accent);
+}
+
+.button.large {
+  padding: 24px;
+  border: var(--border);
+  box-shadow: var(--shadow);
+  font-size: 1.25rem;
+}
+
+.button.large:focus-visible {
+  box-shadow: var(--halo), var(--shadow);
+}
+
+.button:disabled {
+  background: var(--paper);
+  color: var(--muted);
+  cursor: not-allowed;
 }
 
 .gps-slot {
@@ -216,15 +296,6 @@ body {
 .gps-close {
   flex: none;
   margin-left: auto;
-  padding: 10px 16px;
-  border: 3px solid var(--ink);
-  border-radius: 0;
-  background: var(--paper);
-  box-shadow: 4px 4px 0 var(--ink);
-  color: inherit;
-  font: inherit;
-  font-weight: 700;
-  cursor: pointer;
 }
 
 .gps-credit,
@@ -243,39 +314,46 @@ body {
   color: inherit;
 }
 
-.maps-action {
-  grid-area: action;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 12px;
+.actions {
+  grid-area: actions;
+  display: grid;
+  grid-template-columns: subgrid;
+  row-gap: 12px;
 }
 
-.maps-button {
-  display: block;
-  width: 100%;
-  padding: 24px;
-  border: var(--border);
-  border-radius: 0;
-  background: var(--accent);
-  box-shadow: var(--shadow);
-  color: var(--ink);
-  font: inherit;
+.maps-note {
+  grid-column: 1;
+  place-self: start;
+}
+
+.filter-button {
+  grid-area: 1 / 2;
+  justify-self: center;
+  width: 50%;
+  min-width: fit-content;
+}
+
+.filter-dialog {
+  width: min(28rem, 100% - 32px);
+  padding: 20px 24px;
+}
+
+.filter-dialog::backdrop {
+  background: rgb(0 0 0 / 0.5);
+}
+
+.filter-dialog h2 {
+  margin: 0;
   font-size: 1.25rem;
-  font-weight: 700;
-  text-align: center;
-  text-decoration: none;
-  cursor: pointer;
 }
 
-.maps-button:disabled {
-  background: var(--paper);
-  color: var(--muted);
-  cursor: not-allowed;
+.filter-dialog p {
+  margin: 8px 0 20px;
 }
 
-.maps-button:focus-visible {
-  box-shadow: var(--halo), var(--shadow);
+.filter-dialog form {
+  display: flex;
+  justify-content: flex-end;
 }
 
 @media (width < 720px) {
@@ -295,7 +373,7 @@ body {
       'emotion'
       'summary'
       'map'
-      'action';
+      'actions';
     align-content: start;
     gap: 28px;
   }
@@ -306,5 +384,12 @@ body {
 
   .gps {
     width: min(100%, 320px);
+  }
+
+  .filter-button {
+    grid-area: auto;
+    justify-self: stretch;
+    width: auto;
+    margin-top: 16px;
   }
 }

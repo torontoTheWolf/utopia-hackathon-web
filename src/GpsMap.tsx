@@ -146,7 +146,7 @@ export default function GpsMap({ location, locate, spot, onSpotChange, open, onO
               {!spot && <p>Tap the map to choose a spot</p>}
               {text.notice && <p>{text.notice}</p>}
             </div>
-            <button ref={closeButtonRef} className="gps-close" type="button" onClick={() => onOpenChange(false)}>
+            <button ref={closeButtonRef} className="button gps-close" type="button" onClick={() => onOpenChange(false)}>
               Close map
             </button>
           </div>
