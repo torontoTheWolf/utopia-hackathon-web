@@ -1,0 +1,4 @@
+html {
+  min-height: 100%;
+  background: #000 url('./assets/background.jpeg') center / cover no-repeat;
+}
