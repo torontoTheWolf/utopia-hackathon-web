@@ -15,6 +15,10 @@ const mapsApp = MAPS_APPS[preferredMapsApp(navigator.userAgent)]
 
 const FACES: Record<Emotion, string> = { Happy: happyFace, Angry: angryFace, Tired: tiredFace, Hungry: hungryFace, Sad: sadFace }
 
+const QUESTIONS = ['Question 1', 'Question 2', 'Question 3', 'Question 4', 'Question 5']
+
+const DOTS = 2
+
 type SuggestionOf<S extends Suggestion['status']> = Extract<Suggestion, { status: S }>
 
 const SUGGESTION_TEXT: { [S in Suggestion['status']]: (suggestion: SuggestionOf<S>) => readonly string[] } = {
@@ -41,13 +45,13 @@ function formatDistance(km: number): string {
 
 export default function App() {
   const [emotion, setEmotion] = useState<Emotion | null>(null)
-  const [summary, setSummary] = useState('')
-  const [entered, setEntered] = useState<{ emotion: Emotion | null; summary: string } | null>(null)
+  const [answers, setAnswers] = useState<readonly (number | null)[]>(() => QUESTIONS.map(() => null))
+  const [entered, setEntered] = useState<{ emotion: Emotion | null; answers: readonly (number | null)[] } | null>(null)
   const [mapOpen, setMapOpen] = useState(false)
   const filterRef = useRef<HTMLDialogElement>(null)
   const { location, locate } = useCurrentPosition()
   const { spot, suggestion, suggest, tapSpot } = useSpot(location)
-  const gotIt = entered !== null && entered.emotion === emotion && entered.summary === summary
+  const gotIt = entered !== null && entered.emotion === emotion && entered.answers.every((answer, index) => answer === answers[index])
 
   return (
     <div className="page">
@@ -81,21 +85,40 @@ export default function App() {
         <form
           className="panel summary"
           inert={mapOpen}
+          aria-labelledby="summary-heading"
           onSubmit={(event) => {
             event.preventDefault()
-            setEntered({ emotion, summary })
+            setEntered({ emotion, answers })
           }}
         >
-          <label htmlFor="summary">In your own words</label>
-          <textarea
-            id="summary"
-            placeholder="Enter your own summary of how you feel here"
-            value={summary}
-            onChange={(event) => setSummary(event.target.value)}
-          />
+          <p id="summary-heading" className="summary-heading">
+            In your own words
+          </p>
+          <ol className="questions">
+            {QUESTIONS.map((question, index) => (
+              <li key={index} className="question" tabIndex={-1}>
+                <div className="question-body" role="radiogroup" aria-labelledby={`question-${index}`}>
+                  <span id={`question-${index}`}>{question}</span>
+                  <span className="dots">
+                    {Array.from({ length: DOTS }, (_, dot) => (
+                      <input
+                        key={dot}
+                        className="dot"
+                        type="radio"
+                        name={`question-${index}`}
+                        aria-label={`${dot + 1} of ${DOTS}`}
+                        checked={answers[index] === dot + 1}
+                        onChange={() => setAnswers((current) => current.with(index, dot + 1))}
+                      />
+                    ))}
+                  </span>
+                </div>
+              </li>
+            ))}
+          </ol>
           <div className="summary-submit">
             <p role="status">{gotIt && 'Got it'}</p>
-            <button className="button primary" type="submit" disabled={emotion === null && summary.trim() === ''}>
+            <button className="button primary" type="submit" disabled={emotion === null && answers.every((answer) => answer === null)}>
               Enter
             </button>
           </div>

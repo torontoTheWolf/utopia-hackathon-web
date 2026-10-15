@@ -100,7 +100,7 @@ body::after {
 }
 
 .emotion-heading,
-.summary label {
+.summary-heading {
   font-size: 1.125rem;
   font-weight: 700;
 }
@@ -234,30 +234,104 @@ body::after {
 }
 
 .summary {
+  /* "In your own words" is about 9.7em wide, so capped at 9.6cqi it takes at most 93% of the width and stays on one line on the narrowest phones. */
+  --heading-size: min(1.125rem, 9.6cqi);
+
   grid-area: summary;
   display: flex;
   flex-direction: column;
   gap: var(--tight);
+  container-type: inline-size;
 }
 
-.summary textarea {
+.summary-heading {
+  margin: 0;
+  font-size: var(--heading-size);
+}
+
+/* The questions share out the room the panel has left, so they never scroll or change its size. */
+.questions {
   flex: 1;
-  min-height: 48px;
-  padding: clamp(6px, 1.5vmin, 12px);
-  border: 3px solid var(--ink);
-  border-radius: 0;
-  color: inherit;
-  /* iOS Safari zooms the page into any field whose text is smaller than 16px. */
-  font-size: 16px;
-  resize: none;
+  min-height: 0;
+  display: grid;
+  grid-auto-rows: minmax(0, 1fr);
+  gap: var(--tight);
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
+/* A Google Forms style card. The panel sets its size, and what is inside scales to fit it. */
+.question {
+  container-type: size;
+  border: 2px solid var(--ink);
+  border-radius: 8px;
+  background: var(--paper);
+}
+
+/* Like Google Forms, clicking anywhere on a card gives it a bar down its left side. The card takes focus itself, so this works where clicking a dot doesn't focus it, as in Safari. */
+.question:focus-within {
+  box-shadow: inset 6px 0 0 var(--accent);
+}
+
+/* The question on the left and its dots on the right. */
+.question-body {
+  --dot: clamp(12px, 55cqh, 24px);
+  --dot-gap: clamp(6px, 3cqi, 16px);
+
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--tight);
+  height: 100%;
+  padding: 0 calc(var(--inset) + 6px);
+  font-size: clamp(10px, 45cqh, 1rem);
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+/* In a narrow card the dots go under the question. */
+@container (width < 15rem) {
+  .question-body {
+    --dot: clamp(12px, 30cqh, 24px);
+
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    gap: calc(var(--tight) / 2);
+    font-size: clamp(10px, 25cqh, 1rem);
+  }
+}
+
+.dots {
+  display: flex;
+  flex: none;
+  gap: var(--dot-gap);
+}
+
+.dot {
+  width: var(--dot);
+  height: var(--dot);
+  margin: 0;
+  border: 2px solid var(--ink);
+  border-radius: 50%;
+  background: var(--paper);
+  appearance: none;
+  cursor: pointer;
+}
+
+.dot:checked {
+  background: var(--ink);
+}
+
+/* Enter sits as far above the bottom of the panel as the first question sits below its top: the heading's one line and the gap under it. */
 .summary-submit {
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
   align-items: center;
   gap: var(--tight) 12px;
+  margin-bottom: calc(var(--heading-size) * 1.4 + var(--tight));
 }
 
 .summary-submit p {
