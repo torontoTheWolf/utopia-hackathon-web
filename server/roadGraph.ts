@@ -188,8 +188,13 @@ type RoadPoint = { edge: number; from: number; to: number; along: number; metres
 export type Router = {
   route: (from: LatLng, to: LatLng, mode: TravelMode) => Route | null
   // The indexes of up to `count` targets that are closest by road for the mode, closest first, with each target's
-  // distance multiplied by its factor.
-  nearest: (from: LatLng, targets: readonly { position: LatLng; factor: number }[], mode: TravelMode, count: number) => number[]
+  // distance multiplied by its factor. Of targets in the same group, only the closest is kept.
+  nearest: (
+    from: LatLng,
+    targets: readonly { position: LatLng; factor: number; group?: string }[],
+    mode: TravelMode,
+    count: number,
+  ) => number[]
 }
 
 // Routes start and end on the closest point of the closest road, and follow roads and paths in between.
@@ -404,21 +409,26 @@ export function createRouter(graph: RoadGraph): Router {
         return found
       }
       const minFactor = Math.min(...targets.map(({ factor }) => factor))
+      // With fewer groups than `count`, the search can stop once it has the closest of each.
+      const groups = new Set(targets.map(({ group }, index) => group ?? index)).size
+      const limit = Math.min(count, groups)
       // The best targets so far, cheapest first, and the cost a target must beat to join them.
       const best: { target: number; cost: number }[] = []
-      const bound = () => (best.length < count ? Infinity : best[count - 1].cost)
+      const bound = () => (best.length < limit ? Infinity : best[limit - 1].cost)
       // `away` is how far the target is from the road where the trip would leave it.
       const consider = (target: number, length: number, away: number) => {
         const total = (length + away) * targets[target].factor
         if (total >= bound()) return
-        const known = best.findIndex((entry) => entry.target === target)
+        // The target itself, or another in its group, already among the best.
+        const group = targets[target].group
+        const known = best.findIndex((entry) => entry.target === target || (group !== undefined && targets[entry.target].group === group))
         if (known >= 0 && best[known].cost <= total) return
         // A road this close will do whichever road is closest, which is slower to find.
         if (away > SLACK_METRES && away > roadMetres(target) + SLACK_METRES) return
         if (known >= 0) best.splice(known, 1)
         best.push({ target, cost: total })
         best.sort((a, b) => a.cost - b.cost)
-        best.length = Math.min(best.length, count)
+        best.length = Math.min(best.length, limit)
       }
 
       // Targets on the road you're on, reached along it.

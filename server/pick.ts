@@ -16,7 +16,8 @@ by road in km. Choose the one place that suits them best. How they feel and thei
 distance, but when nothing else separates two places, prefer the closer one. Give the place's number and one short, \
 warm sentence, spoken to them, on why it suits them. The app shows the place's name next to your sentence, so call \
 the place "it" or "this park", "this café" and so on, never by its name or a translation of it. Don't mention distances, \
-numbers, or the questions themselves.`
+numbers, or the questions themselves. When they have already been offered some kinds of place, they asked for \
+something else, so prefer a kind they haven't been offered yet, without mentioning the earlier ones.`
 
 // The most places Claude chooses between. The schema stays the same from one request to the next, so the API compiles
 // it once and reuses it, where a list of each request's place ids would cost a compile every time.
@@ -51,7 +52,13 @@ export function canPick(): boolean {
   return anthropic() !== null
 }
 
-export async function pickPlace(emotion: Emotion, answers: readonly (Answer | null)[], candidates: readonly Candidate[]): Promise<Pick | null> {
+// `offered` are the kinds of place already suggested to them, as when they press Try again.
+export async function pickPlace(
+  emotion: Emotion,
+  answers: readonly (Answer | null)[],
+  candidates: readonly Candidate[],
+  offered: readonly string[],
+): Promise<Pick | null> {
   const claude = anthropic()
   if (claude === null || candidates.length < 2) return null
   const places = candidates.slice(0, MAX_PLACES)
@@ -62,6 +69,7 @@ export async function pickPlace(emotion: Emotion, answers: readonly (Answer | nu
       return { question: text, answer: answer === null ? null : options[answer - 1] }
     }),
     places: places.map(({ name, kind, roadKm }, index) => ({ number: index + 1, name, kind, roadKm })),
+    alreadyOffered: offered,
   }
   try {
     const response = await claude.messages.parse({

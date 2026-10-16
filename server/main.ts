@@ -21,8 +21,10 @@ const MAX_RADIUS_KM = 50
 const MAX_ROUTE_KM = 50
 const REQUESTS_PER_MINUTE = 300
 const MAX_FACTOR = 10
-// GraphHopper measures routes to this many of the closest places by the built-in router, and the shortest wins.
-const CANDIDATES = 5
+// The built-in router finds the closest place of each kind, for up to this many kinds. GraphHopper measures routes to
+// them, and Claude picks one, or else the shortest wins. One of each kind gives Claude a real choice where one kind, like
+// temples in Bangkok, would otherwise fill every place.
+const CANDIDATES = 8
 
 const pbfPath = process.argv[2] ?? DEFAULT_EXTRACT
 
@@ -154,11 +156,12 @@ async function serveSuggestion(params: URLSearchParams, request: IncomingMessage
       error: `Expected kinds, each with a factor up to ${MAX_FACTOR}, lat, lng, radiusKm up to ${MAX_RADIUS_KM} and a mode, and optionally an emotion`,
     })
   }
-  const candidates = [...kinds].flatMap(([kind, factor]) =>
-    placesNear(index, kind as PlaceKindId, center, radiusKm)
-      .filter((place) => !exclude.has(place.id))
-      .map((place) => ({ ...place, kind, factor })),
+  const nearby = [...kinds].map(([kind, factor]) => ({ kind: kind as PlaceKindId, factor, places: placesNear(index, kind as PlaceKindId, center, radiusKm) }))
+  const candidates = nearby.flatMap(({ kind, factor, places }) =>
+    places.filter((place) => !exclude.has(place.id)).map((place) => ({ ...place, kind, factor, group: kind })),
   )
+  // The kinds of place already suggested, which Try again asks Claude to move on from.
+  const offered = nearby.filter(({ places }) => places.some((place) => exclude.has(place.id))).map(({ kind }) => PLACE_KINDS[kind].label)
   const nearest = router.nearest(center, candidates, mode as TravelMode, CANDIDATES)
   if (nearest.length === 0) return send(response, 404, { error: 'No places that roads reach' })
   // The same routes /api/route gives, so they don't change when the app asks again.
@@ -172,7 +175,7 @@ async function serveSuggestion(params: URLSearchParams, request: IncomingMessage
       ? []
       : [{ id: place.id, name: localName(place.names, languages), kind: PLACE_KINDS[place.kind as PlaceKindId].label, roadKm: Math.round(route.distanceKm * 10) / 10 }],
   )
-  const pick = emotion === null ? null : await pickPlace(emotion as Emotion, answers, reachable)
+  const pick = emotion === null ? null : await pickPlace(emotion as Emotion, answers, reachable, offered)
   const picked = routed.find(({ place }) => place.id === pick?.id)
   const length = ({ place, route }: (typeof routed)[number]) => (route === null ? Infinity : route.distanceKm * place.factor)
   const { place, route } = picked ?? routed.reduce((best, next) => (length(next) < length(best) ? next : best))

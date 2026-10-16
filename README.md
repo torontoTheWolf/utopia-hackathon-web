@@ -29,11 +29,11 @@ Place names follow the browser's language when the map has a name in that langua
 
 Routes come from [GraphHopper](https://github.com/graphhopper/graphhopper), which the API runs alongside itself. It respects turn restrictions, barriers and access rules, and gives the turn-by-turn directions shown on the open map. It needs Java 17 or later. The first start downloads GraphHopper 11.1 from Maven Central (47 MB, checked against a pinned SHA-256) into `tmp/graphhopper/`, then imports the extract, which takes about 15 minutes and up to 7 GB of memory. Later starts take about half a minute. Until it's ready, and without Java, routes come from the API's own router, which has no directions and ignores turn restrictions. Its settings are in `server/graphhopper.yml`, and its log is `tmp/graphhopper/graphhopper.log`. When the extract changes, it imports it into a new `tmp/graphhopper/graph-…` folder, and the old one can be deleted.
 
-To pick a suggestion, the API's own router finds the 5 closest places, and the one with the shortest GraphHopper route wins.
+To pick a suggestion, the API's own router finds the closest place of each kind, for up to 8 kinds, and the one with the shortest GraphHopper route wins.
 
 ### Suggestions from Claude
 
-With an Anthropic API key, Claude Haiku 5.5 chooses among those 5 places instead (`server/pick.ts`). It gets the emotion, each question in `src/questions.ts` with the option chosen, and each place's name, kind and distance by road. It answers with one of the places and a sentence on why it suits the person, which the app shows in the suggestion. Put the key in `.env.local`, which git ignores, as `ANTHROPIC_API_KEY=sk-ant-…`, and restart the API. Vite passes only the `VITE_` variables in that file to the browser, so the key stays on this machine. The API says when it starts whether Claude is picking.
+With an Anthropic API key, Claude Haiku 5.5 chooses among those places instead (`server/pick.ts`). It gets the emotion, each question in `src/questions.ts` with the option chosen, and each place's name, kind and distance by road. It answers with one of the places and a sentence on why it suits the person, which the app shows in the suggestion. Put the key in `.env.local`, which git ignores, as `ANTHROPIC_API_KEY=sk-ant-…`, and restart the API. Vite passes only the `VITE_` variables in that file to the browser, so the key stays on this machine. The API says when it starts whether Claude is picking.
 
 Without a key, or when Claude fails, declines or doesn't answer within 10 seconds, the closest place is suggested as before, and the API logs why. The emotion, the answers and the places' names go to Anthropic; the person's location doesn't.
 
