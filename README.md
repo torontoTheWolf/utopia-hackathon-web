@@ -40,7 +40,7 @@ Without a key, or when Claude fails, declines or doesn't answer within 10 second
 
 ### Reading aloud with ElevenLabs
 
-A small megaphone, in the accent colour, starts the suggestion in the pop-up. Pressing it reads the suggestion aloud with [ElevenLabs](https://elevenlabs.io/), and pressing it again stops (`src/SpeakButton.tsx`, `server/speak.ts`). Put an ElevenLabs API key in `.env.local` as `ELEVENLABS_API_KEY=…` and restart the API, which says when it starts whether the megaphones can speak. Until then the megaphone fades when pressed and says reading aloud isn't set up yet. Like the Anthropic key, it stays on this machine.
+Small megaphones, in the accent colour, start each question, the How to use panel and the suggestion in the pop-up. Pressing one reads its text aloud with [ElevenLabs](https://elevenlabs.io/), and pressing it again stops (`src/SpeakButton.tsx`, `server/speak.ts`). Put an ElevenLabs API key in `.env.local` as `ELEVENLABS_API_KEY=…` and restart the API, which says when it starts whether the megaphones can speak. Until then the megaphone fades when pressed and says reading aloud isn't set up yet. Like the Anthropic key, it stays on this machine.
 
 It uses the voice George and the `eleven_flash_v2_5` model, the quickest and cheapest per character. To use another voice, copy its ID from its page on elevenlabs.io into `.env.local` as `ELEVENLABS_VOICE_ID=…`. ElevenLabs charges by the character, so each visitor may have 20 texts read a minute, and browsers keep each one's audio for a day, so playing it again is free. The text goes to ElevenLabs.
 

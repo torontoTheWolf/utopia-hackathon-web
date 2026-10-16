@@ -34,6 +34,15 @@ const DARK_FACES: Record<Emotion, string> = {
   Sad: sadFaceDark,
 }
 
+const HELP_STEPS = [
+  'Pick the face that matches how you feel.',
+  'Answer each question with 1 or 2.',
+  'Press Enter to find a place.',
+  'Choose Walk or Drive.',
+  'Tap Get directions to go.',
+]
+const HELP_TIP = 'Tap Try again for another place, or Clear to start over.'
+
 type SuggestionOf<S extends Suggestion['status']> = Extract<Suggestion, { status: S }>
 
 const SUGGESTION_TEXT: { [S in Suggestion['status']]: (suggestion: SuggestionOf<S>) => readonly string[] } = {
@@ -125,17 +134,17 @@ export default function App() {
   return (
     <div className="page">
       <aside className="panel side help" aria-labelledby="help-heading">
-        <p id="help-heading" className="help-heading">
-          How to use
+        {/* The megaphone reads out the heading, every step and the tip. */}
+        <p className="help-heading">
+          <SpeakButton text={['How to use.', ...HELP_STEPS, HELP_TIP].join(' ')} />
+          <span id="help-heading">How to use</span>
         </p>
         <ol className="help-steps">
-          <li>Pick the face that matches how you feel.</li>
-          <li>Answer each question with 1 or 2.</li>
-          <li>Press Enter to find a place.</li>
-          <li>Choose Walk or Drive.</li>
-          <li>Tap Get directions to go.</li>
+          {HELP_STEPS.map((step) => (
+            <li key={step}>{step}</li>
+          ))}
         </ol>
-        <p className="help-tip">Tap Try again for another place, or Clear to start over.</p>
+        <p className="help-tip">{HELP_TIP}</p>
       </aside>
       <main className="center">
         <fieldset className="panel emotion" inert={mapOpen} aria-labelledby="emotion-heading">
@@ -180,7 +189,11 @@ export default function App() {
             {QUESTIONS.map((question, index) => (
               <li key={index} className="question" tabIndex={emotion === null ? undefined : -1}>
                 <div className="question-body" role="radiogroup" aria-labelledby={`question-${index}`}>
-                  <span id={`question-${index}`}>{numberedQuestion(question)}</span>
+                  {/* A megaphone before each question reads it out, even before an emotion is picked. */}
+                  <span>
+                    <SpeakButton text={question.text} />
+                    <span id={`question-${index}`}>{numberedQuestion(question)}</span>
+                  </span>
                   <span className="dots">
                     {ANSWERS.map((answer) => (
                       <label key={answer} className="dot-option">
