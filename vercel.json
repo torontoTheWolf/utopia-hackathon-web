@@ -4,7 +4,7 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://happening-tabs-string-science.trycloudflare.com/api/:path*"
+      "destination": "https://telling-succeed-presidential-exploring.trycloudflare.com/api/:path*"
     }
   ]
 }
