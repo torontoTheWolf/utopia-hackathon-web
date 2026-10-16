@@ -1,48 +1,42 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import angryFace from './assets/ANGRY.png'
 import boredFace from './assets/BORDEM.png'
 import happyFace from './assets/HAPPY.png'
 import hungryFace from './assets/HUNGER.png'
 import sadFace from './assets/SAD.png'
+import { burstConfetti } from './confetti'
 import { EMOTIONS, type Emotion } from './emotions'
 import { useCurrentPosition } from './geo'
 import GpsMap from './GpsMap'
 import { MAPS_APPS, preferredMapsApp } from './maps'
 import { PLACE_KINDS } from './places'
-import { formatDistance, TRAVEL_MODES, type TravelMode } from './route'
-import { useRoute, type RouteState } from './useRoute'
+import { ANSWERS, QUESTIONS, type Answer } from './questions'
+import type { TravelMode } from './route'
+import { useRoute } from './useRoute'
 import { useSpot, type Suggestion } from './useSpot'
 
 const mapsApp = MAPS_APPS[preferredMapsApp(navigator.userAgent)]
 
 const FACES: Record<Emotion, string> = { Happy: happyFace, Angry: angryFace, Bored: boredFace, Hungry: hungryFace, Sad: sadFace }
 
-const QUESTIONS = ['Question 1', 'Question 2', 'Question 3', 'Question 4', 'Question 5']
-
-const DOTS = 2
-
 type SuggestionOf<S extends Suggestion['status']> = Extract<Suggestion, { status: S }>
 
-const SUGGESTION_TEXT: { [S in Suggestion['status']]: (suggestion: SuggestionOf<S>, route: RouteState) => readonly string[] } = {
+const SUGGESTION_TEXT: { [S in Suggestion['status']]: (suggestion: SuggestionOf<S>) => readonly string[] } = {
   idle: () => [],
   waiting: () => ['Finding a spot…'],
   searching: () => ['Finding a spot…'],
-  found: ({ emotion, place, distanceKm }, route) => {
-    if (route.status === 'loading') return ['Finding a spot…']
-    // Without a route, the distance is in a straight line.
-    const away =
-      route.status === 'ready' && route.route !== null
-        ? `${formatDistance(route.route.distanceKm)} away ${TRAVEL_MODES[route.mode].phrase}`
-        : `${formatDistance(distanceKm)} away`
-    return [`Try ${place.name}, ${withArticle(PLACE_KINDS[place.kind].label)} ${away}.`, `Tap ${emotion} again for another.`]
-  },
+  found: ({ place, reason }) => [
+    `Try ${place.name}, ${withArticle(PLACE_KINDS[place.kind].label)}.`,
+    ...(reason === null ? [] : [reason]),
+    'Press Enter again for another.',
+  ],
   none: () => ['No matching places nearby. Tap the map to choose a spot instead.'],
-  failed: ({ emotion }) => [`Couldn't reach the places service. Tap ${emotion} to try again.`],
+  failed: () => ["Couldn't reach the places service. Press Enter to try again."],
   noLocation: () => ['Allow location access to get a suggestion.'],
 }
 
-function suggestionText<S extends Suggestion['status']>(suggestion: SuggestionOf<S>, route: RouteState): readonly string[] {
-  return SUGGESTION_TEXT[suggestion.status](suggestion, route)
+function suggestionText<S extends Suggestion['status']>(suggestion: SuggestionOf<S>): readonly string[] {
+  return SUGGESTION_TEXT[suggestion.status](suggestion)
 }
 
 function withArticle(noun: string): string {
@@ -51,15 +45,45 @@ function withArticle(noun: string): string {
 
 export default function App() {
   const [emotion, setEmotion] = useState<Emotion | null>(null)
-  const [answers, setAnswers] = useState<readonly (number | null)[]>(() => QUESTIONS.map(() => null))
-  const [entered, setEntered] = useState<{ emotion: Emotion | null; answers: readonly (number | null)[] } | null>(null)
+  const [answers, setAnswers] = useState<readonly (Answer | null)[]>(() => QUESTIONS.map(() => null))
+  const [cleared, setCleared] = useState(false)
   const [mapOpen, setMapOpen] = useState(false)
   const filterRef = useRef<HTMLDialogElement>(null)
+  const suggestionRef = useRef<HTMLDialogElement>(null)
+  const [suggestionOpen, setSuggestionOpen] = useState(false)
+  const confettiRef = useRef<HTMLDivElement>(null)
+  const enterRef = useRef<HTMLButtonElement>(null)
   const { location, locate } = useCurrentPosition()
   const [travelMode, setTravelMode] = useState<TravelMode>('foot')
   const { spot, suggestion, suggest, tapSpot } = useSpot(location, travelMode)
   const route = useRoute(location, spot, travelMode)
-  const gotIt = entered !== null && entered.emotion === emotion && entered.answers.every((answer, index) => answer === answers[index])
+  const suggestionLines = suggestionText(suggestion)
+  // Enter waits for an emotion and an answer to every question.
+  const complete = emotion !== null && !answers.includes(null)
+  const unanswered = answers.every((answer) => answer === null)
+  const foundId = suggestion.status === 'found' ? suggestion.place.id : null
+
+  // Gold confetti greets each place the pop-up shows: when it opens on one, or when one is found while it's open.
+  useEffect(() => {
+    if (suggestionOpen && foundId !== null && confettiRef.current !== null) burstConfetti(confettiRef.current)
+  }, [suggestionOpen, foundId])
+
+  // The Enter key does what the Enter button does, unless the focused control has its own use for it, the button is
+  // disabled, or the map or a pop-up covers the page.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Enter' || event.repeat || event.isComposing || event.defaultPrevented) return
+      if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return
+      if (event.target instanceof Element && event.target.closest('button, a[href], summary, textarea, select')) return
+      const enter = enterRef.current
+      if (enter === null || enter.disabled || enter.closest('[inert]') !== null || document.querySelector('dialog[open]') !== null) return
+      // Also stops a focused answer dot from submitting the form a second time.
+      event.preventDefault()
+      enter.click()
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [])
 
   return (
     <div className="page">
@@ -79,14 +103,10 @@ export default function App() {
                     name="emotion"
                     checked={emotion === option}
                     onChange={() => setEmotion(option)}
-                    onClick={() => suggest(option)}
                   />
                   <img src={FACES[option]} alt={option} />
                 </label>
               ))}
-            </div>
-            <div className="suggestion" role="status">
-              <p>{suggestionText(suggestion, route).join(' ')}</p>
             </div>
           </div>
         </fieldset>
@@ -96,7 +116,11 @@ export default function App() {
           aria-labelledby="summary-heading"
           onSubmit={(event) => {
             event.preventDefault()
-            setEntered({ emotion, answers })
+            // Enter looks for a place for the emotion and answers. The suggestion pops up and keeps up with the search.
+            if (!complete) return
+            suggest(emotion, answers)
+            suggestionRef.current?.showModal()
+            setSuggestionOpen(true)
           }}
         >
           <p id="summary-heading" className="summary-heading">
@@ -108,15 +132,15 @@ export default function App() {
                 <div className="question-body" role="radiogroup" aria-labelledby={`question-${index}`}>
                   <span id={`question-${index}`}>{question}</span>
                   <span className="dots">
-                    {Array.from({ length: DOTS }, (_, dot) => (
+                    {ANSWERS.map((answer) => (
                       <input
-                        key={dot}
+                        key={answer}
                         className="dot"
                         type="radio"
                         name={`question-${index}`}
-                        aria-label={`${dot + 1} of ${DOTS}`}
-                        checked={answers[index] === dot + 1}
-                        onChange={() => setAnswers((current) => current.with(index, dot + 1))}
+                        aria-label={String(answer)}
+                        checked={answers[index] === answer}
+                        onChange={() => setAnswers((current) => current.with(index, answer))}
                       />
                     ))}
                   </span>
@@ -128,18 +152,38 @@ export default function App() {
             <button className="button filter-button" type="button" onClick={() => filterRef.current?.showModal()}>
               Filter
             </button>
-            <p role="status">{gotIt && 'Got it'}</p>
-            <button className="button primary" type="submit" disabled={emotion === null && answers.every((answer) => answer === null)}>
+            {/* Once used, Clear stays highlighted until an answer is picked again. */}
+            <button
+              className={cleared && unanswered ? 'button is-cleared' : 'button'}
+              type="button"
+              disabled={unanswered}
+              onClick={() => {
+                setAnswers(QUESTIONS.map(() => null))
+                setCleared(true)
+              }}
+            >
+              Clear
+            </button>
+            <button ref={enterRef} className="button primary" type="submit" disabled={!complete}>
               Enter
             </button>
           </div>
         </form>
-        <dialog ref={filterRef} className="panel filter-dialog" aria-labelledby="filter-title">
+        <dialog ref={filterRef} className="panel popup" aria-labelledby="filter-title">
           <h2 id="filter-title">Filter</h2>
           <p>Places you don't want to be sent to will go here.</p>
           <form method="dialog">
             <button className="button">Close</button>
           </form>
+        </dialog>
+        <dialog ref={suggestionRef} className="panel popup" aria-labelledby="suggestion-text" onClose={() => setSuggestionOpen(false)}>
+          <p id="suggestion-text" role="status">
+            {suggestionLines.join(' ')}
+          </p>
+          <form method="dialog">
+            <button className="button">Close</button>
+          </form>
+          <div ref={confettiRef} className="confetti" aria-hidden="true" />
         </dialog>
         <GpsMap
           location={location}

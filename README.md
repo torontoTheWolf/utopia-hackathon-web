@@ -17,7 +17,7 @@ Place suggestions and the routes to them come from a local API, not a public ser
 
 It reads the OpenStreetMap extract `tmp/thailand-261014.osm.pbf` (from [Geofabrik](https://download.geofabrik.de/)) and serves these on `127.0.0.1:8787`, which Vite proxies `/api` to:
 
-- `GET /api/suggest?kinds=park,cafe:2&lat=…&lng=…&radiusKm=…&mode=foot&exclude=n123,w456` returns `{ place, route }`: the place of any of the kinds that is closest by road for the mode, and the route there. A kind written as `cafe:2` counts as twice as far away, which is how `DISTANCE_FACTORS` in `src/places.ts` makes some kinds come up less or more often for an emotion. It skips the places in `exclude`, so the app asks for the next closest each time an emotion is picked again. It answers 404 when no place within the radius can be reached by road.
+- `GET /api/suggest?kinds=park,cafe:2&lat=…&lng=…&radiusKm=…&mode=foot&emotion=Happy&answers=1,0,,1,0&exclude=n123,w456` returns `{ place, route, reason }`: the place of any of the kinds that is closest by road for the mode, or Claude's pick (see below), and the route there. A kind written as `cafe:2` counts as twice as far away, which is how `DISTANCE_FACTORS` in `src/places.ts` makes some kinds come up less or more often for an emotion. `emotion` and `answers` are optional; `answers` has one entry per question in `src/questions.ts`, 1, 0 or empty when unanswered. `reason` is why Claude picked the place, or null. It skips the places in `exclude`, so the app asks for another each time Enter is pressed again. It answers 404 when no place within the radius can be reached by road.
 - `GET /api/places?kind=park&lat=…&lng=…&radiusKm=…` lists named places of a kind nearby. Each has an `id`, the OpenStreetMap element, such as `n123` for a node or `w456` for a way.
 - `GET /api/route?from=lat,lng&to=lat,lng&mode=foot` (or `mode=car`) returns `{ distanceKm, path }`: the shortest walk, or the quickest drive at typical road speeds. Routes start and end at the closest point of the closest road, and only join a road up to 30 m further from the end than that, so they can't cut across canals or buildings. It answers 404 when the ends aren't joined by roads or either is over a kilometre from one, and the app then falls back to a dashed straight line.
 
@@ -30,6 +30,12 @@ Place names follow the browser's language when the map has a name in that langua
 Routes come from [GraphHopper](https://github.com/graphhopper/graphhopper), which the API runs alongside itself. It respects turn restrictions, barriers and access rules, and gives the turn-by-turn directions shown on the open map. It needs Java 17 or later. The first start downloads GraphHopper 11.1 from Maven Central (47 MB, checked against a pinned SHA-256) into `tmp/graphhopper/`, then imports the extract, which takes about 15 minutes and up to 7 GB of memory. Later starts take about half a minute. Until it's ready, and without Java, routes come from the API's own router, which has no directions and ignores turn restrictions. Its settings are in `server/graphhopper.yml`, and its log is `tmp/graphhopper/graphhopper.log`. When the extract changes, it imports it into a new `tmp/graphhopper/graph-…` folder, and the old one can be deleted.
 
 To pick a suggestion, the API's own router finds the 5 closest places, and the one with the shortest GraphHopper route wins.
+
+### Suggestions from Claude
+
+With an Anthropic API key, Claude Haiku 5.5 chooses among those 5 places instead (`server/pick.ts`). It gets the emotion, each question in `src/questions.ts` with its answer, and each place's name, kind and distance by road. It answers with one of the places and a sentence on why it suits the person, which the app shows in the suggestion. Put the key in `.env.local`, which git ignores, as `ANTHROPIC_API_KEY=sk-ant-…`, and restart the API. Vite passes only the `VITE_` variables in that file to the browser, so the key stays on this machine. The API says when it starts whether Claude is picking.
+
+Without a key, or when Claude fails, declines or doesn't answer within 6 seconds twice, the closest place is suggested as before, and the API logs why. The emotion, the answers and the places' names go to Anthropic; the person's location doesn't.
 
 ### Share the API with the live site
 

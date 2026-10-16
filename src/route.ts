@@ -2,9 +2,9 @@ import type { LatLng } from './geo'
 
 export type TravelMode = 'foot' | 'car'
 
-export const TRAVEL_MODES: Record<TravelMode, { label: string; phrase: string }> = {
-  foot: { label: 'Walk', phrase: 'on foot' },
-  car: { label: 'Drive', phrase: 'by car' },
+export const TRAVEL_MODES: Record<TravelMode, { label: string }> = {
+  foot: { label: 'Walk' },
+  car: { label: 'Drive' },
 }
 
 // `steps` are turn-by-turn directions, when the router gives them.

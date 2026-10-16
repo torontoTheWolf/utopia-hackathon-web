@@ -135,31 +135,17 @@ body::after {
   }
 }
 
-/* The heading sits on the left and the faces at the far right. The suggestion is positioned over its grid area, so it never sizes a row: the bar is the same height with or without it. On phones it gets a row of its own under the faces, three lines tall and always there. */
+/* The heading sits on the left and the faces at the far right. */
 .emotion-body {
   --face-gap: calc(var(--tight) * 1.6);
-  /* The width the five faces may take; on phones, everything beside a 7rem heading ("How are you / feeling?" on two lines). */
+  /* The width the five faces may take: everything beside a 7rem heading ("How are you / feeling?" on two lines). */
   --face-room: calc(100cqi - 7rem - var(--tight));
   --face: calc(0.9 * min(clamp(var(--tap), 8.4vh, 84px) - 5px, (var(--face-room) - 4 * var(--face-gap)) / 5));
-  --suggestion-size: 0.8125rem;
-  --suggestion-lines: calc(3 * 1.25 * var(--suggestion-size));
 
-  position: relative;
   display: grid;
   grid-template-columns: minmax(7rem, 1fr) auto;
-  grid-template-rows: auto var(--suggestion-lines);
   align-items: center;
   gap: var(--tight);
-}
-
-/* Wide enough for the suggestion to sit between the heading and the faces, with 12.5rem kept for the heading on one line and 11rem for the suggestion. */
-@container (width >= 40rem) {
-  .emotion-body {
-    --face-room: calc(100cqi - 23.5rem - 2 * var(--tight));
-
-    grid-template-columns: auto minmax(0, 1fr) auto;
-    grid-template-rows: minmax(var(--suggestion-lines), auto);
-  }
 }
 
 /* 10px from the panel's left wall, out into the panel's side padding. */
@@ -204,33 +190,6 @@ body::after {
 .face:has(:focus-visible) {
   outline: 3px solid var(--accent);
   outline-offset: 2px;
-}
-
-.suggestion {
-  position: absolute;
-  inset: 0;
-  grid-area: 2 / 1 / 3 / -1;
-  display: grid;
-  place-items: center;
-  font-size: var(--suggestion-size);
-  line-height: 1.25;
-  text-align: center;
-}
-
-/* A name too long for three lines is cut short rather than growing the bar. */
-.suggestion p {
-  display: -webkit-box;
-  margin: 0;
-  overflow: hidden;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
-  line-clamp: 3;
-}
-
-@container (width >= 40rem) {
-  .suggestion {
-    grid-area: 1 / 2 / 2 / 3;
-  }
 }
 
 .summary {
@@ -326,35 +285,40 @@ body::after {
   background: var(--ink);
 }
 
-/* Filter and Enter sit as far above the bottom of the panel as the first question sits below its top: the heading's one line and the gap under it. */
+/* Filter, Clear and Enter sit as far above the bottom of the panel as the first question sits below its top: the heading's one line and the gap under it. Filter is at one end, Enter at the other, and Clear halfway between. */
 .summary-submit {
   display: flex;
   flex-wrap: wrap;
-  justify-content: flex-end;
+  justify-content: space-between;
   align-items: center;
   gap: var(--tight) 12px;
   margin-bottom: calc(var(--heading-size) * 1.4 + var(--tight));
-}
-
-.summary-submit p {
-  margin: 0;
-}
-
-.summary-submit [role='status'] {
-  font-weight: 700;
 }
 
 .summary-submit .button {
   border-radius: var(--card-radius);
 }
 
-/* Too narrow for "Got it" beside both buttons, it keeps a line of its own above them, so Filter and Enter stay on one line and nothing moves when it appears. */
-@container (width < 15rem) {
-  .summary-submit [role='status'] {
-    order: -1;
-    flex-basis: 100%;
-    min-height: 1lh;
-    text-align: right;
+/* Just used, Clear is filled yellow rather than greyed out, until an answer is picked again. */
+.summary-submit .is-cleared:disabled {
+  background: var(--button);
+  color: var(--ink);
+  cursor: default;
+}
+
+/* Too narrow for all three in a row, as on phones: Filter and Clear share a row above Enter, which takes the full width. */
+@container (width < 16.5rem) {
+  .summary-submit {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .summary-submit .button {
+    padding-inline: 6px;
+  }
+
+  .summary-submit .primary {
+    grid-column: 1 / -1;
   }
 }
 
@@ -652,32 +616,73 @@ body::after {
   display: grid;
 }
 
-/* Filter sits at the far end of the row from Enter, and pressing it leaves its shadow faint. */
+/* Pressing the filter button leaves its shadow faint. */
 .filter-button {
   --button-pressed-shadow: 4px 4px 0 rgb(0 0 0 / 0.35);
-
-  margin-right: auto;
 }
 
-.filter-dialog {
+/* The filter and the suggestion pop up over the page, rising and fading in as the backdrop dims. Confetti may fly out past their edges. */
+.popup {
   width: min(28rem, 100% - 32px);
   padding: 20px 24px;
+  overflow: visible;
 }
 
-.filter-dialog::backdrop {
+.popup[open] {
+  animation: popup-in 320ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.popup::backdrop {
   background: rgb(0 0 0 / 0.5);
 }
 
-.filter-dialog h2 {
-  margin: 0;
+.popup[open]::backdrop {
+  animation: fade-in 320ms ease-out;
+}
+
+@keyframes popup-in {
+  from {
+    opacity: 0;
+    translate: 0 24px;
+    scale: 0.94;
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .popup[open] {
+    animation-name: fade-in;
+  }
+}
+
+.confetti {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.confetti-piece {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  border-radius: 2px;
+}
+
+.popup h2 {
+  margin: 0 0 8px;
   font-size: 1.25rem;
 }
 
-.filter-dialog p {
-  margin: 8px 0 20px;
+.popup p {
+  margin: 0 0 20px;
 }
 
-.filter-dialog form {
+.popup form {
   display: flex;
   justify-content: flex-end;
 }

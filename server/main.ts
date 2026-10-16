@@ -1,11 +1,14 @@
-import { readFileSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { fileURLToPath } from 'node:url'
+import { EMOTIONS, type Emotion } from '../src/emotions.ts'
 import type { LatLng } from '../src/geo.ts'
 import { distanceKm, PLACE_KINDS, type PlaceKindId } from '../src/places.ts'
+import { parseAnswers, QUESTIONS } from '../src/questions.ts'
 import { TRAVEL_MODES, type Route, type TravelMode } from '../src/route.ts'
 import { buildPlaceIndex, placesNear, type Names, type PlaceIndex } from './placeIndex.ts'
 import { startGraphHopper, type GraphHopper } from './graphhopper.ts'
+import { canPick, pickPlace } from './pick.ts'
 import { createRouter, loadRoadGraph, type Router } from './roadGraph.ts'
 
 const HOST = '127.0.0.1'
@@ -22,6 +25,10 @@ const MAX_FACTOR = 10
 const CANDIDATES = 5
 
 const pbfPath = process.argv[2] ?? DEFAULT_EXTRACT
+
+// ANTHROPIC_API_KEY can go in .env.local, which git ignores. Vite passes only the VITE_ variables in it to the browser.
+const ENV_FILE = fileURLToPath(new URL('../.env.local', import.meta.url))
+if (existsSync(ENV_FILE)) process.loadEnvFile(ENV_FILE)
 let index: PlaceIndex
 let router: Router
 let graphHopper: GraphHopper
@@ -57,6 +64,7 @@ server.listen(PORT, HOST, () => {
   router = createRouter(loadRoadGraph(pbfPath))
   graphHopper = startGraphHopper(pbfPath)
   console.log(`Places API listening on http://${HOST}:${PORT}`)
+  console.log(canPick() ? 'Places API: Claude picks the suggested places' : 'Places API: no ANTHROPIC_API_KEY, so suggestions are the closest places')
 })
 
 // The index is cached next to the extract, and rebuilt when the extract or the place kinds change.
@@ -130,15 +138,20 @@ async function serveSuggestion(params: URLSearchParams, request: IncomingMessage
   const radiusKm = toNumber(params.get('radiusKm'))
   const mode = params.get('mode') ?? ''
   const exclude = new Set(params.get('exclude')?.split(',') ?? [])
+  // Without an emotion, the closest place is suggested. Unanswered questions are left out of "answers".
+  const emotion = params.get('emotion')
+  const answers = parseAnswers(params.get('answers') ?? QUESTIONS.map(() => '').join(','))
   if (
     // Written so that NaN fails the factor and radius checks.
     ![...kinds].every(([kind, factor]) => Object.hasOwn(PLACE_KINDS, kind) && factor > 0 && factor <= MAX_FACTOR) ||
     center === null ||
     !(radiusKm > 0 && radiusKm <= MAX_RADIUS_KM) ||
-    !Object.hasOwn(TRAVEL_MODES, mode)
+    !Object.hasOwn(TRAVEL_MODES, mode) ||
+    (emotion !== null && !(EMOTIONS as readonly string[]).includes(emotion)) ||
+    answers === null
   ) {
     return send(response, 400, {
-      error: `Expected kinds, each with a factor up to ${MAX_FACTOR}, lat, lng, radiusKm up to ${MAX_RADIUS_KM} and a mode`,
+      error: `Expected kinds, each with a factor up to ${MAX_FACTOR}, lat, lng, radiusKm up to ${MAX_RADIUS_KM} and a mode, and optionally an emotion and ${QUESTIONS.length} answers of 1, 0 or nothing`,
     })
   }
   const candidates = [...kinds].flatMap(([kind, factor]) =>
@@ -152,12 +165,21 @@ async function serveSuggestion(params: URLSearchParams, request: IncomingMessage
   const routed = await Promise.all(
     nearest.map(async (index) => ({ place: candidates[index], route: await findRoute(center, candidates[index].position, mode as TravelMode, request) })),
   )
-  const length = ({ place, route }: (typeof routed)[number]) => (route === null ? Infinity : route.distanceKm * place.factor)
-  const { place, route } = routed.reduce((best, next) => (length(next) < length(best) ? next : best))
   const languages = preferredLanguages(request.headers['accept-language'])
+  // Claude picks from the places a route reaches, or else the closest wins, counting each kind's factor.
+  const reachable = routed.flatMap(({ place, route }) =>
+    route === null
+      ? []
+      : [{ id: place.id, name: localName(place.names, languages), kind: PLACE_KINDS[place.kind as PlaceKindId].label, roadKm: Math.round(route.distanceKm * 10) / 10 }],
+  )
+  const pick = emotion === null ? null : await pickPlace(emotion as Emotion, answers, reachable)
+  const picked = routed.find(({ place }) => place.id === pick?.id)
+  const length = ({ place, route }: (typeof routed)[number]) => (route === null ? Infinity : route.distanceKm * place.factor)
+  const { place, route } = picked ?? routed.reduce((best, next) => (length(next) < length(best) ? next : best))
   send(response, 200, {
     place: { id: place.id, name: localName(place.names, languages), kind: place.kind, ...place.position },
     route: route && routeJson(route),
+    reason: picked && pick ? pick.reason : null,
   })
 }
 
