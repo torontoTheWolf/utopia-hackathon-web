@@ -4,7 +4,7 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://ftp-lisa-sociology-prix.trycloudflare.com/api/:path*"
+      "destination": "https://kept-salt-purchase-cookies.trycloudflare.com/api/:path*"
     }
   ]
 }
