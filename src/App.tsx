@@ -18,6 +18,7 @@ import { MAPS_APPS, preferredMapsApp } from './maps'
 import { PLACE_KINDS, type PlaceKindId } from './places'
 import { ANSWERS, QUESTIONS, type Answer, type Question } from './questions'
 import type { TravelMode } from './route'
+import SpeakButton from './SpeakButton'
 import { useRoute } from './useRoute'
 import { applyTheme, savedDark } from './theme'
 import { useSpot, type Suggestion } from './useSpot'
@@ -93,7 +94,7 @@ export default function App() {
   useEffect(() => saveAvoided(avoided), [avoided])
   useEffect(() => applyTheme(dark), [dark])
 
-  const suggestionLines = suggestionText(suggestion)
+  const suggestionMessage = suggestionText(suggestion).join(' ')
   // Enter waits for an emotion and an answer to every question.
   const complete = emotion !== null && !answers.includes(null)
   const unanswered = answers.every((answer) => answer === null)
@@ -246,8 +247,12 @@ export default function App() {
           </form>
         </dialog>
         <dialog ref={suggestionRef} className="panel popup" aria-labelledby="suggestion-text" onClose={() => setSuggestionOpen(false)}>
-          <p id="suggestion-text" role="status">
-            {suggestionLines.join(' ')}
+          {/* The megaphone before a found place reads it aloud. */}
+          <p>
+            {suggestionOpen && suggestion.status === 'found' && <SpeakButton key={suggestionMessage} text={suggestionMessage} />}
+            <span id="suggestion-text" role="status">
+              {suggestionMessage}
+            </span>
           </p>
           <form method="dialog">
             {/* Looks for another place without closing, like pressing Enter again. */}

@@ -10,6 +10,7 @@ import { buildPlaceIndex, placesNear, type Names, type PlaceIndex } from './plac
 import { startGraphHopper, type GraphHopper } from './graphhopper.ts'
 import { canPick, pickPlace } from './pick.ts'
 import { createRouter, loadRoadGraph, type Router } from './roadGraph.ts'
+import { canSpeak, speak } from './speak.ts'
 
 const HOST = '127.0.0.1'
 const PORT = 8787
@@ -21,6 +22,9 @@ const MAX_RADIUS_KM = 50
 const MAX_ROUTE_KM = 50
 const REQUESTS_PER_MINUTE = 300
 const MAX_FACTOR = 10
+// ElevenLabs charges by the character, so reading aloud has a lower limit, and the text a length cap.
+const SPEECH_PER_MINUTE = 20
+const MAX_SPEECH_CHARS = 600
 // The built-in router finds the closest place of each kind, for up to this many kinds. GraphHopper measures routes to
 // them, and Claude picks one, or else the shortest wins. One of each kind gives Claude a real choice where one kind, like
 // temples in Bangkok, would otherwise fill every place.
@@ -38,19 +42,24 @@ let graphHopper: GraphHopper
 // When Vite starts the API, it keeps an IPC channel open until it exits.
 process.on('disconnect', () => process.exit())
 
-// Counts each client's requests in the current minute.
+// Counts each client's requests, and requests to read aloud, in the current minute.
 let requestCounts = new Map<string, number>()
-setInterval(() => (requestCounts = new Map()), 60_000).unref()
+let speechCounts = new Map<string, number>()
+setInterval(() => {
+  requestCounts = new Map()
+  speechCounts = new Map()
+}, 60_000).unref()
 
 const server = createServer((request, response) => {
   const url = new URL(request.url ?? '/', `http://${HOST}`)
-  if (isOverLimit(request)) return send(response, 429, { error: 'Too many requests' }, { 'Retry-After': '60' })
+  if (isOverLimit(request, requestCounts, REQUESTS_PER_MINUTE)) return send(response, 429, { error: 'Too many requests' }, { 'Retry-After': '60' })
   if (request.method === 'GET' && url.pathname === '/api/places') return servePlaces(url.searchParams, request, response)
   const failed = () => send(response, 500, { error: 'Something went wrong' })
   if (request.method === 'GET' && url.pathname === '/api/route') return void serveRoute(url.searchParams, request, response).catch(failed)
   if (request.method === 'GET' && url.pathname === '/api/suggest') {
     return void serveSuggestion(url.searchParams, request, response).catch(failed)
   }
+  if (request.method === 'GET' && url.pathname === '/api/speak') return void serveSpeech(url.searchParams, request, response).catch(failed)
   send(response, 404, { error: 'Not found' })
 })
 
@@ -67,6 +76,7 @@ server.listen(PORT, HOST, () => {
   graphHopper = startGraphHopper(pbfPath)
   console.log(`Places API listening on http://${HOST}:${PORT}`)
   console.log(canPick() ? 'Places API: Claude picks the suggested places' : 'Places API: no ANTHROPIC_API_KEY, so suggestions are the closest places')
+  console.log(canSpeak() ? 'Places API: ElevenLabs reads text aloud' : 'Places API: no ELEVENLABS_API_KEY, so the megaphones stay silent')
 })
 
 // The index is cached next to the extract, and rebuilt when the extract or the place kinds change.
@@ -186,6 +196,19 @@ async function serveSuggestion(params: URLSearchParams, request: IncomingMessage
   })
 }
 
+// MP3 audio of `text`, read by ElevenLabs. Answers 503 when ELEVENLABS_API_KEY isn't set, and 502 when ElevenLabs fails.
+// Browsers keep the audio for a day, so playing the same text again doesn't cost another request.
+async function serveSpeech(params: URLSearchParams, request: IncomingMessage, response: ServerResponse): Promise<void> {
+  const text = params.get('text')?.trim() ?? ''
+  if (text === '' || text.length > MAX_SPEECH_CHARS) return send(response, 400, { error: `Expected text up to ${MAX_SPEECH_CHARS} characters` })
+  if (!canSpeak()) return send(response, 503, { error: 'Reading aloud is not set up' })
+  if (isOverLimit(request, speechCounts, SPEECH_PER_MINUTE)) return send(response, 429, { error: 'Too many requests' }, { 'Retry-After': '60' })
+  const audio = await speak(text)
+  if (audio === null) return send(response, 502, { error: 'ElevenLabs failed' })
+  response.writeHead(200, { 'Content-Type': 'audio/mpeg', 'Content-Length': audio.length, 'Cache-Control': 'private, max-age=86400' })
+  response.end(audio)
+}
+
 // GraphHopper's route, with directions, or the built-in router's when GraphHopper isn't ready or finds none.
 async function findRoute(from: LatLng, to: LatLng, mode: TravelMode, request: IncomingMessage): Promise<Route | null> {
   const locale = preferredLanguages(request.headers['accept-language'])[0]?.split('-')[0] ?? 'en'
@@ -225,12 +248,12 @@ function localName(names: Names, languages: readonly string[]): string {
 }
 
 // Through Vercel and a tunnel, every request comes from localhost, and the visitor is the first forwarded address.
-function isOverLimit(request: IncomingMessage): boolean {
+function isOverLimit(request: IncomingMessage, counts: Map<string, number>, limit: number): boolean {
   const forwarded = request.headers['x-forwarded-for']
   const client = String(forwarded ?? '').split(',')[0].trim() || request.socket.remoteAddress || ''
-  const count = (requestCounts.get(client) ?? 0) + 1
-  requestCounts.set(client, count)
-  return count > REQUESTS_PER_MINUTE
+  const count = (counts.get(client) ?? 0) + 1
+  counts.set(client, count)
+  return count > limit
 }
 
 function send(response: ServerResponse, status: number, body: unknown, headers: { [name: string]: string } = {}): void {

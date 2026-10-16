@@ -816,6 +816,80 @@ body::after {
   vertical-align: -0.2em;
 }
 
+/* The megaphone at the start of a text, which reads it aloud. It's the accent colour, not the text's, in both modes. Its
+   tap area reaches past the icon without making the line taller or moving it off the text's left edge. */
+.speak {
+  display: inline-grid;
+  place-items: center;
+  width: 2em;
+  height: 2em;
+  margin: -0.5em 0.1em -0.5em -0.25em;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--accent);
+  vertical-align: middle;
+  cursor: pointer;
+}
+
+.speak svg {
+  width: 1.5em;
+  height: 1.5em;
+  transition: scale 150ms ease;
+}
+
+@media (hover: hover) {
+  .speak:hover svg {
+    scale: 1.12;
+  }
+}
+
+.speak:active svg {
+  scale: 0.9;
+}
+
+/* Waiting for the audio, the megaphone pulses. While it plays, the waves ripple out, and pressing it stops. */
+.speak.is-loading svg {
+  animation: speak-pulse 700ms ease-in-out infinite alternate;
+}
+
+.speak.is-playing .speak-wave {
+  animation: speak-wave 900ms ease-in-out infinite;
+}
+
+.speak.is-playing .speak-wave + .speak-wave {
+  animation-delay: 180ms;
+}
+
+/* Until ElevenLabs is set up. */
+.speak.is-unavailable {
+  opacity: 0.45;
+}
+
+@keyframes speak-pulse {
+  to {
+    opacity: 0.4;
+  }
+}
+
+@keyframes speak-wave {
+  50% {
+    opacity: 0.2;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .speak.is-loading svg {
+    opacity: 0.6;
+    animation: none;
+  }
+
+  .speak.is-playing .speak-wave {
+    animation: none;
+  }
+}
+
 .panel.side { 
   background: rgb(255 255 255 / 0.35); backdrop-filter: blur(6px);
 }
