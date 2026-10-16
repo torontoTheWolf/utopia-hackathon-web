@@ -236,6 +236,8 @@ body::after {
 .summary {
   /* "In your own words" is about 9.7em wide, so capped at 9.6cqi it takes at most 93% of the width and stays on one line on the narrowest phones. */
   --heading-size: min(1.125rem, 9.6cqi);
+  /* The question cards' corners, which Filter and Enter share. */
+  --card-radius: 8px;
 
   grid-area: summary;
   display: flex;
@@ -265,7 +267,7 @@ body::after {
 .question {
   container-type: size;
   border: 2px solid var(--ink);
-  border-radius: 8px;
+  border-radius: var(--card-radius);
   background: var(--paper);
 }
 
@@ -324,7 +326,7 @@ body::after {
   background: var(--ink);
 }
 
-/* Enter sits as far above the bottom of the panel as the first question sits below its top: the heading's one line and the gap under it. */
+/* Filter and Enter sit as far above the bottom of the panel as the first question sits below its top: the heading's one line and the gap under it. */
 .summary-submit {
   display: flex;
   flex-wrap: wrap;
@@ -340,6 +342,20 @@ body::after {
 
 .summary-submit [role='status'] {
   font-weight: 700;
+}
+
+.summary-submit .button {
+  border-radius: var(--card-radius);
+}
+
+/* Too narrow for "Got it" beside both buttons, it keeps a line of its own above them, so Filter and Enter stay on one line and nothing moves when it appears. */
+@container (width < 15rem) {
+  .summary-submit [role='status'] {
+    order: -1;
+    flex-basis: 100%;
+    min-height: 1lh;
+    text-align: right;
+  }
 }
 
 /* The shadow is as faint as the panels'. Pressing the button darkens it in 150ms, and letting go fades it back in 250ms, so a quick click still shows. */
@@ -598,22 +614,17 @@ body::after {
   translate: -50% 0;
 }
 
+/* The directions button runs the full width under the questions and the map. */
 .actions {
   grid-area: actions;
   display: grid;
-  grid-template-columns: subgrid;
 }
 
+/* Filter sits at the far end of the row from Enter, and pressing it leaves its shadow faint. */
 .filter-button {
-  grid-area: 1 / 2;
-  justify-self: center;
-  width: 50%;
-  min-width: fit-content;
-}
+  --button-pressed-shadow: 4px 4px 0 rgb(0 0 0 / 0.35);
 
-/* Pressing the filter button leaves its shadow faint. */
-.filter-button:active:not(:disabled) {
-  --button-shadow: var(--shadow);
+  margin-right: auto;
 }
 
 .filter-dialog {

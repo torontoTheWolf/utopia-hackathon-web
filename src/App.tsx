@@ -130,12 +130,22 @@ export default function App() {
             ))}
           </ol>
           <div className="summary-submit">
+            <button className="button filter-button" type="button" onClick={() => filterRef.current?.showModal()}>
+              Filter
+            </button>
             <p role="status">{gotIt && 'Got it'}</p>
             <button className="button primary" type="submit" disabled={emotion === null && answers.every((answer) => answer === null)}>
               Enter
             </button>
           </div>
         </form>
+        <dialog ref={filterRef} className="panel filter-dialog" aria-labelledby="filter-title">
+          <h2 id="filter-title">Filter</h2>
+          <p>Places you don't want to be sent to will go here.</p>
+          <form method="dialog">
+            <button className="button">Close</button>
+          </form>
+        </dialog>
         <GpsMap
           location={location}
           locate={locate}
@@ -150,23 +160,13 @@ export default function App() {
         <div className="actions" inert={mapOpen}>
           {spot ? (
             <a className="button primary large" href={mapsApp.directionsUrl(spot.position, travelMode)} target="_blank" rel="noopener noreferrer">
-              {`Open in ${mapsApp.label}`}
+              Get directions
             </a>
           ) : (
             <button className="button primary large" type="button" disabled>
-              Pick an emotion or tap the map
+              {emotion === null ? 'Pick an emotion or tap the map' : 'Get directions'}
             </button>
           )}
-          <button className="button large filter-button" type="button" onClick={() => filterRef.current?.showModal()}>
-            Filter
-          </button>
-          <dialog ref={filterRef} className="panel filter-dialog" aria-labelledby="filter-title">
-            <h2 id="filter-title">Filter</h2>
-            <p>Places you don't want to be sent to will go here.</p>
-            <form method="dialog">
-              <button className="button">Close</button>
-            </form>
-          </dialog>
         </div>
       </main>
       <aside className="panel side" aria-hidden="true" />
