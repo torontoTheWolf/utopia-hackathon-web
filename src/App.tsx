@@ -100,7 +100,19 @@ export default function App() {
 
   return (
     <div className="page">
-      <aside className="panel side" aria-hidden="true" />
+      <aside className="panel side help" aria-labelledby="help-heading">
+        <p id="help-heading" className="help-heading">
+          How to use
+        </p>
+        <ol className="help-steps">
+          <li>Pick the face that matches how you feel.</li>
+          <li>Answer each question with 1 or 2.</li>
+          <li>Press Enter to find a place.</li>
+          <li>Choose Walk or Drive.</li>
+          <li>Tap Get directions to go.</li>
+        </ol>
+        <p className="help-tip">Press Enter again for another place, or Clear to start over.</p>
+      </aside>
       <main className="center">
         <fieldset className="panel emotion" inert={mapOpen} aria-labelledby="emotion-heading">
           <div className="emotion-body">
