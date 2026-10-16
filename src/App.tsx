@@ -1,9 +1,14 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import angryFace from './assets/ANGRY.png'
+import angryFaceDark from './assets/ANGRY_DARK.png'
 import boredFace from './assets/BORDEM.png'
+import boredFaceDark from './assets/BORED_DARK.png'
 import happyFace from './assets/HAPPY.png'
+import happyFaceDark from './assets/HAPPY_DARK.png'
 import hungryFace from './assets/HUNGER.png'
+import hungryFaceDark from './assets/HUNGRY_DARK.png'
 import sadFace from './assets/SAD.png'
+import sadFaceDark from './assets/SAD_DARK.png'
 import { burstConfetti } from './confetti'
 import { EMOTIONS, type Emotion } from './emotions'
 import { useCurrentPosition } from './geo'
@@ -14,11 +19,19 @@ import { PLACE_KINDS, type PlaceKindId } from './places'
 import { ANSWERS, QUESTIONS, type Answer, type Question } from './questions'
 import type { TravelMode } from './route'
 import { useRoute } from './useRoute'
+import { applyTheme, savedDark } from './theme'
 import { useSpot, type Suggestion } from './useSpot'
 
 const mapsApp = MAPS_APPS[preferredMapsApp(navigator.userAgent)]
 
 const FACES: Record<Emotion, string> = { Happy: happyFace, Angry: angryFace, Bored: boredFace, Hungry: hungryFace, Sad: sadFace }
+const DARK_FACES: Record<Emotion, string> = {
+  Happy: happyFaceDark,
+  Angry: angryFaceDark,
+  Bored: boredFaceDark,
+  Hungry: hungryFaceDark,
+  Sad: sadFaceDark,
+}
 
 type SuggestionOf<S extends Suggestion['status']> = Extract<Suggestion, { status: S }>
 
@@ -74,9 +87,11 @@ export default function App() {
   const { location, locate } = useCurrentPosition()
   const [travelMode, setTravelMode] = useState<TravelMode>('foot')
   const [avoided, setAvoided] = useState<ReadonlySet<PlaceKindId>>(loadAvoided)
+  const [dark, setDark] = useState(savedDark)
   const { spot, suggestion, suggest, tapSpot, reset: resetSpot } = useSpot(location, travelMode, avoided)
   const route = useRoute(location, spot, travelMode)
   useEffect(() => saveAvoided(avoided), [avoided])
+  useEffect(() => applyTheme(dark), [dark])
 
   const suggestionLines = suggestionText(suggestion)
   // Enter waits for an emotion and an answer to every question.
@@ -137,7 +152,7 @@ export default function App() {
                     checked={emotion === option}
                     onChange={() => setEmotion(option)}
                   />
-                  <img src={FACES[option]} alt={option} />
+                  <img src={(dark ? DARK_FACES : FACES)[option]} alt={option} />
                 </label>
               ))}
             </div>
@@ -273,6 +288,30 @@ export default function App() {
               Get directions
             </button>
           )}
+          <button
+            className="button large theme-toggle"
+            type="button"
+            aria-label="Dark mode"
+            aria-pressed={dark}
+            title={dark ? 'Switch to light mode' : 'Switch to dark mode'}
+            onClick={() => setDark((current) => !current)}
+          >
+            {dark ? (
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <circle cx="12" cy="12" r="4.5" fill="currentColor" />
+                <path
+                  d="M12 1.5v3M12 19.5v3M1.5 12h3M19.5 12h3M4.6 4.6l2.1 2.1M17.3 17.3l2.1 2.1M4.6 19.4l2.1-2.1M17.3 6.7l2.1-2.1"
+                  stroke="currentColor"
+                  strokeWidth="2.2"
+                  strokeLinecap="round"
+                />
+              </svg>
+            ) : (
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M20.5 14.5A8.5 8.5 0 1 1 9.5 3.5a7 7 0 0 0 11 11z" fill="currentColor" />
+              </svg>
+            )}
+          </button>
         </div>
       </main>
       <aside className="panel side" aria-hidden="true" />

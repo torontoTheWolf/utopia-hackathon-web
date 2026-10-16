@@ -110,7 +110,7 @@ export default function GpsMap({ location, locate, spot, onTap, route, travelMod
       )
       if (spot && route.status === 'ready' && route.route !== null) {
         // A white edge keeps the route readable over the roads it follows.
-        L.polyline(route.route.path, { color: '#fff', weight: 8, interactive: false }).addTo(overlay)
+        L.polyline(route.route.path, { color: '#fff', weight: 8, interactive: false, className: 'gps-route-edge' }).addTo(overlay)
         L.polyline(route.route.path, { color: '#000', weight: 4, interactive: false, className: 'gps-route' }).addTo(overlay)
       } else if (spot && route.status === 'ready') {
         // Without a route, a dashed straight line still points the way.

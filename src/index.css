@@ -3,7 +3,14 @@
   --paper: #fff;
   --accent: #e4572e;
   --button: #ffd60a;
+  /* Text on yellow, which stays black in dark mode too. */
+  --on-button: #000;
   --muted: #6b6b6b;
+  /* The solid shadows of pressed buttons and map notes, black in both modes. */
+  --shadow-ink: #000;
+  /* The directions bar's text and padding, which also size the dark mode switch beside it. */
+  --bar-font: min(2.25rem, 1rem + 2.25vmin);
+  --bar-pad: clamp(4px, 1.75vmin, 14px);
   --font: 'Playpen Sans Variable', system-ui, sans-serif;
   --border: 4px solid var(--ink);
   --shadow: 6px 6px 0 rgb(0 0 0 /0.35);
@@ -358,7 +365,7 @@ body::after {
 /* Just used, Clear is filled yellow rather than greyed out, until an answer is picked again. */
 .summary-submit .is-cleared:disabled {
   background: var(--button);
-  color: var(--ink);
+  color: var(--on-button);
   cursor: default;
 }
 
@@ -381,7 +388,7 @@ body::after {
 /* The shadow is as faint as the panels'. Pressing the button darkens it in 150ms, and letting go fades it back in 250ms, so a quick click still shows. */
 .button {
   --button-shadow: 4px 4px 0 rgb(0 0 0 / 0.35);
-  --button-pressed-shadow: 4px 4px 0 var(--ink);
+  --button-pressed-shadow: 4px 4px 0 var(--shadow-ink);
 
   min-height: var(--tap);
   padding: clamp(4px, 1.2vmin, 10px) clamp(10px, 2vmin, 16px);
@@ -409,16 +416,17 @@ body::after {
 
 .button.primary {
   background: var(--button);
+  color: var(--on-button);
 }
 
 /* The directions bar. Its label fills most of its height, with less padding than smaller buttons have. */
 .button.large {
   --button-shadow: var(--shadow);
-  --button-pressed-shadow: 6px 6px 0 var(--ink);
+  --button-pressed-shadow: 6px 6px 0 var(--shadow-ink);
 
-  padding: clamp(4px, 1.75vmin, 14px) clamp(10px, 3vmin, 24px);
+  padding: var(--bar-pad) clamp(10px, 3vmin, 24px);
   border: var(--border);
-  font-size: min(2.25rem, 1rem + 2.25vmin);
+  font-size: var(--bar-font);
   font-weight: 400;
   line-height: 1.2;
 }
@@ -536,7 +544,7 @@ body::after {
   padding: 8px 12px;
   border: 3px solid var(--ink);
   background: var(--paper);
-  box-shadow: 4px 4px 0 var(--ink);
+  box-shadow: 4px 4px 0 var(--shadow-ink);
 }
 
 .gps-hint:empty {
@@ -557,6 +565,7 @@ body::after {
   padding: 4px 8px;
   border: 2px solid var(--ink);
   border-radius: 0;
+  background: var(--paper);
   box-shadow: none;
   color: var(--ink);
   font: 700 0.875rem / 1.3 var(--font);
@@ -588,7 +597,7 @@ body::after {
   max-width: 24rem;
   border: 3px solid var(--ink);
   background: var(--paper);
-  box-shadow: 4px 4px 0 var(--ink);
+  box-shadow: 4px 4px 0 var(--shadow-ink);
 }
 
 .gps-directions summary {
@@ -652,6 +661,7 @@ body::after {
 
 .travel-mode label:has(:checked) {
   background: var(--button);
+  color: var(--on-button);
 }
 
 .travel-mode:has(:focus-visible) {
@@ -669,10 +679,25 @@ body::after {
   translate: -50% 0;
 }
 
-/* The directions button runs the full width under the questions and the map. */
+/* The directions button runs the full width under the questions and the map, with the dark mode switch at its end. */
 .actions {
   grid-area: actions;
   display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+}
+
+/* Square, as tall as the directions bar. */
+.button.theme-toggle {
+  display: grid;
+  place-items: center;
+  width: calc(var(--bar-font) * 1.2 + 2 * var(--bar-pad) + 8px);
+  padding: 0;
+}
+
+.theme-toggle svg {
+  width: 50%;
+  height: 50%;
 }
 
 /* Pressing the filter button leaves its shadow faint. */
@@ -844,6 +869,7 @@ body::after {
   border: 2px solid var(--ink);
   border-radius: 50%;
   background: var(--button);
+  color: var(--on-button);
   font-size: 0.9em;
   font-weight: 700;
 }
@@ -851,4 +877,58 @@ body::after {
 .help-tip {
   margin: var(--gap) 0 0;
   font-size: calc(var(--text) * 0.9);
+}
+
+/* Dark mode, switched on with the moon at the end of the directions bar. Text and outlines turn light on dark panels,
+   yellow keeps black text, the night background replaces the day one, and the map is dimmed. */
+:root[data-theme='dark'] {
+  --ink: #f1ede4;
+  --paper: #1f2125;
+  --muted: #8f8f8f;
+  --shadow: 6px 6px 0 rgb(0 0 0 / 0.6);
+
+  color-scheme: dark;
+  /* Kept to its bottom edge, so screens wider than the picture lose sky rather than its mushrooms. */
+  background: #000 url('./assets/BACKGROUND_DARK.png') center bottom / cover no-repeat;
+}
+
+/* The night background has its own glowing mushrooms along the bottom, so the day's strip isn't needed. */
+:root[data-theme='dark'] body::after {
+  display: none;
+}
+
+:root[data-theme='dark'] .panel.side {
+  background: rgb(18 20 24 / 0.55);
+}
+
+:root[data-theme='dark'] .gps-map.leaflet-container {
+  background: #2a2c30;
+}
+
+:root[data-theme='dark'] .gps-map .leaflet-tile-pane {
+  filter: invert(1) hue-rotate(180deg) brightness(0.95) contrast(0.9);
+}
+
+/* The route, light on a dark edge. */
+:root[data-theme='dark'] .gps-route-edge {
+  stroke: #000;
+}
+
+:root[data-theme='dark'] .gps-route {
+  stroke: var(--ink);
+}
+
+:root[data-theme='dark'] .gps-map .leaflet-bar a {
+  border-bottom-color: #3a3c40;
+  background: var(--paper);
+  color: var(--ink);
+}
+
+:root[data-theme='dark'] .gps-map .leaflet-control-attribution {
+  background: rgb(31 33 37 / 0.85);
+  color: var(--ink);
+}
+
+:root[data-theme='dark'] .gps-map .leaflet-control-attribution a {
+  color: #8ab4f8;
 }
