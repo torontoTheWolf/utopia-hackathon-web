@@ -7,7 +7,7 @@ export const QUESTIONS: readonly Question[] = [
   { text: 'Cats or dogs?', options: ['Cats', 'Dogs'] },
   { text: 'Roses or dandelions?', options: ['Roses', 'Dandelions'] },
   { text: 'Hot or cold?', options: ['Hot', 'Cold'] },
-  { text: 'Question 5', options: ['Yes', 'No'] },
+  { text: 'The city or the countryside?', options: ['City', 'Countryside'] },
 ]
 
 // The number of the option chosen.
