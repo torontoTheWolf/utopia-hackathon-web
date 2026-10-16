@@ -8,9 +8,20 @@ export type LocationState =
   | { status: 'denied' }
   | { status: 'unavailable' }
 
+// For now everyone is placed at Avani Sukhumvit Bangkok Hotel, by BTS On Nut (OpenStreetMap node 11752122869), and the
+// browser's location isn't asked for. Set this to null to use people's real locations again.
+const FIXED_LOCATION: { position: LatLng; accuracy: number } | null = {
+  position: { lat: 13.7052416, lng: 100.6015603 },
+  accuracy: 20,
+}
+
 export function useCurrentPosition(): { location: LocationState; locate: () => void } {
   const [location, setLocation] = useState<LocationState>(() =>
-    'geolocation' in navigator ? { status: 'locating' } : { status: 'unavailable' },
+    FIXED_LOCATION !== null
+      ? { status: 'located', ...FIXED_LOCATION }
+      : 'geolocation' in navigator
+        ? { status: 'locating' }
+        : { status: 'unavailable' },
   )
   const watchId = useRef<number | null>(null)
 
@@ -21,7 +32,7 @@ export function useCurrentPosition(): { location: LocationState; locate: () => v
   }, [])
 
   const watch = useCallback(() => {
-    if (watchId.current !== null || !('geolocation' in navigator)) return
+    if (FIXED_LOCATION !== null || watchId.current !== null || !('geolocation' in navigator)) return
     watchId.current = navigator.geolocation.watchPosition(
       ({ coords }) => {
         setLocation({
@@ -43,7 +54,7 @@ export function useCurrentPosition(): { location: LocationState; locate: () => v
   }, [stopWatching])
 
   const locate = useCallback(() => {
-    if (watchId.current !== null || !('geolocation' in navigator)) return
+    if (FIXED_LOCATION !== null || watchId.current !== null || !('geolocation' in navigator)) return
     setLocation({ status: 'locating' })
     watch()
   }, [watch])
