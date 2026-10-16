@@ -10,9 +10,9 @@ const MODEL = 'claude-haiku-5-5'
 // Long enough for a quick pick, short enough that the closest place still comes back promptly when Claude doesn't.
 const TIMEOUT_MS = 6000
 
-const SYSTEM = `You help someone choose where to go right now. You get how they feel, their answers to a few questions \
-(each answer is 1 or 0, or null when they didn't answer), and the numbered places nearby they can reach, with each one's \
-distance by road in km. Choose the one place that suits them best. How they feel and their answers matter more than \
+const SYSTEM = `You help someone choose where to go right now. You get how they feel, the option they chose for each of \
+a few questions (null when they didn't answer), and the numbered places nearby they can reach, with each one's distance \
+by road in km. Choose the one place that suits them best. How they feel and their answers matter more than \
 distance, but when nothing else separates two places, prefer the closer one. Give the place's number and one short, \
 warm sentence, spoken to them, on why it suits them. Don't mention distances, numbers, or the questions themselves.`
 
@@ -55,7 +55,10 @@ export async function pickPlace(emotion: Emotion, answers: readonly (Answer | nu
   const places = candidates.slice(0, MAX_PLACES)
   const request = {
     feeling: emotion,
-    answers: QUESTIONS.map((question, index) => ({ question, answer: answers[index] ?? null })),
+    answers: QUESTIONS.map(({ text, options }, index) => {
+      const answer = answers[index] ?? null
+      return { question: text, answer: answer === null ? null : options[answer - 1] }
+    }),
     places: places.map(({ name, kind, roadKm }, index) => ({ number: index + 1, name, kind, roadKm })),
   }
   try {

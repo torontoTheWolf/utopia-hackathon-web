@@ -237,7 +237,7 @@ body::after {
 
 /* The question on the left and its dots on the right. */
 .question-body {
-  --dot: clamp(12px, 55cqh, 24px);
+  --dot: clamp(12px, 50cqh, 24px);
   --dot-gap: clamp(6px, 3cqi, 16px);
 
   display: flex;
@@ -270,6 +270,35 @@ body::after {
   gap: var(--dot-gap);
 }
 
+/* Each dot has its option's number over it, matching the small numbers in the question. */
+.dot-option {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  cursor: pointer;
+}
+
+.dot-number {
+  font-size: max(9px, var(--dot) * 0.5);
+  font-weight: 700;
+  line-height: 1;
+}
+
+/* A card too short for a number over each dot has it beside the dot instead: a short card, or a narrow one that may have
+   a two-line question over its dots, as on the smallest phones. */
+@container (height < 1.75rem) or ((width < 15rem) and (height < 4.5rem)) {
+  .dot-option {
+    flex-direction: row;
+    gap: 2px;
+  }
+}
+
+.question sup {
+  font-size: 0.6em;
+  line-height: 0;
+}
+
 .dot {
   width: var(--dot);
   height: var(--dot);
@@ -283,6 +312,21 @@ body::after {
 
 .dot:checked {
   background: var(--ink);
+}
+
+/* Until an emotion is picked, the questions are greyed out and their dots can't be picked. */
+.questions.is-locked .question {
+  border-color: var(--muted);
+  color: var(--muted);
+}
+
+.dot:disabled {
+  border-color: var(--muted);
+}
+
+.dot-option:has(.dot:disabled),
+.dot:disabled {
+  cursor: not-allowed;
 }
 
 /* Filter, Clear and Enter sit as far above the bottom of the panel as the first question sits below its top: the heading's one line and the gap under it. Filter is at one end, Enter at the other, and Clear halfway between. */

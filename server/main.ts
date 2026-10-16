@@ -138,20 +138,20 @@ async function serveSuggestion(params: URLSearchParams, request: IncomingMessage
   const radiusKm = toNumber(params.get('radiusKm'))
   const mode = params.get('mode') ?? ''
   const exclude = new Set(params.get('exclude')?.split(',') ?? [])
-  // Without an emotion, the closest place is suggested. Unanswered questions are left out of "answers".
+  // Without an emotion, the closest place is suggested. Unanswered questions are left out of "answers", and answers it
+  // can't read, as from a live site built before the questions changed, count as unanswered.
   const emotion = params.get('emotion')
-  const answers = parseAnswers(params.get('answers') ?? QUESTIONS.map(() => '').join(','))
+  const answers = parseAnswers(params.get('answers') ?? '') ?? QUESTIONS.map(() => null)
   if (
     // Written so that NaN fails the factor and radius checks.
     ![...kinds].every(([kind, factor]) => Object.hasOwn(PLACE_KINDS, kind) && factor > 0 && factor <= MAX_FACTOR) ||
     center === null ||
     !(radiusKm > 0 && radiusKm <= MAX_RADIUS_KM) ||
     !Object.hasOwn(TRAVEL_MODES, mode) ||
-    (emotion !== null && !(EMOTIONS as readonly string[]).includes(emotion)) ||
-    answers === null
+    (emotion !== null && !(EMOTIONS as readonly string[]).includes(emotion))
   ) {
     return send(response, 400, {
-      error: `Expected kinds, each with a factor up to ${MAX_FACTOR}, lat, lng, radiusKm up to ${MAX_RADIUS_KM} and a mode, and optionally an emotion and ${QUESTIONS.length} answers of 1, 0 or nothing`,
+      error: `Expected kinds, each with a factor up to ${MAX_FACTOR}, lat, lng, radiusKm up to ${MAX_RADIUS_KM} and a mode, and optionally an emotion`,
     })
   }
   const candidates = [...kinds].flatMap(([kind, factor]) =>

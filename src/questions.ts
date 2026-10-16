@@ -1,19 +1,28 @@
-// The questions under "In your own words". The server shows Claude each question with its answer when it picks a place,
-// so a question's text should say what its 1 and 0 mean.
-export const QUESTIONS = ['Question 1', 'Question 2', 'Question 3', 'Question 4', 'Question 5'] as const
+// The questions under "In your own words". Each has two options, numbered 1 and 2 over the dots. In the question, the
+// first mention of each option gets its number, like "Day¹ or night²?". Claude is told the option chosen, in words.
+export type Question = { text: string; options: readonly [string, string] }
 
-export type Answer = 0 | 1
+export const QUESTIONS: readonly Question[] = [
+  { text: 'Day or night?', options: ['Day', 'Night'] },
+  { text: 'Cats or dogs?', options: ['Cats', 'Dogs'] },
+  { text: 'Roses or dandelions?', options: ['Roses', 'Dandelions'] },
+  { text: 'Hot or cold?', options: ['Hot', 'Cold'] },
+  { text: 'Question 5', options: ['Yes', 'No'] },
+]
+
+// The number of the option chosen.
+export type Answer = 1 | 2
 
 // The answer each dot gives, left to right.
-export const ANSWERS: readonly Answer[] = [1, 0]
+export const ANSWERS: readonly Answer[] = [1, 2]
 
-// Answers travel as one query parameter, like "1,0,,1,0", with nothing between the commas for a question left unanswered.
+// Answers travel as one query parameter, like "1,2,,1,2", with nothing between the commas for a question left unanswered.
 export function formatAnswers(answers: readonly (Answer | null)[]): string {
   return answers.map((answer) => answer ?? '').join(',')
 }
 
 // Null when `text` isn't one answer, or no answer, for each question.
 export function parseAnswers(text: string): (Answer | null)[] | null {
-  const answers = text.split(',').map((item) => (item === '' ? null : item === '0' ? 0 : item === '1' ? 1 : undefined))
+  const answers = text.split(',').map((item) => (item === '' ? null : item === '1' ? 1 : item === '2' ? 2 : undefined))
   return answers.length === QUESTIONS.length && !answers.includes(undefined) ? (answers as (Answer | null)[]) : null
 }

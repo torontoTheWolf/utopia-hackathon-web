@@ -12,6 +12,8 @@ const ATTRIBUTION = `&copy; <a href="https://www.openstreetmap.org/copyright" ${
 const LEAFLET_PREFIX = `<a href="https://leafletjs.com" ${NEW_TAB}>Leaflet</a>`
 const BLUE = '#1a73e8'
 const ACCENT = '#e4572e'
+// Where the map starts once it knows where you are, and goes back to when the spot is cleared.
+const HOME_ZOOM = 16
 const SPOT_ZOOM = 15
 const MAX_FIT_ZOOM = 17
 const MARKER_ROOM = 32
@@ -43,6 +45,7 @@ export default function GpsMap({ location, locate, spot, onTap, route, travelMod
   const mapRef = useRef<L.Map | null>(null)
   const overlayRef = useRef<L.LayerGroup | null>(null)
   const centeredRef = useRef(false)
+  const hadSpotRef = useRef(false)
   const wasOpenRef = useRef(open)
   const openButtonRef = useRef<HTMLButtonElement>(null)
   const closeButtonRef = useRef<HTMLButtonElement>(null)
@@ -80,8 +83,21 @@ export default function GpsMap({ location, locate, spot, onTap, route, travelMod
   useEffect(() => {
     if (location.status !== 'located' || centeredRef.current) return
     centeredRef.current = true
-    mapRef.current?.setView(location.position, 16)
+    mapRef.current?.setView(location.position, HOME_ZOOM)
   }, [location])
+
+  const goHome = useEffectEvent(() => {
+    if (location.status === 'located') mapRef.current?.setView(location.position, HOME_ZOOM)
+  })
+
+  // When the spot goes, as when Clear is pressed, the map goes back to where you are.
+  useEffect(() => {
+    if (spot !== null) hadSpotRef.current = true
+    else if (hadSpotRef.current) {
+      hadSpotRef.current = false
+      goHome()
+    }
+  }, [spot])
 
   useEffect(() => {
     const overlay = overlayRef.current

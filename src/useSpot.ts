@@ -116,5 +116,12 @@ export function useSpot(location: LocationState, mode: TravelMode) {
     setSpot({ origin: 'tapped', position })
   }, [])
 
-  return { spot, suggestion: toSuggestion(search, location), suggest, tapSpot }
+  // Forgets the spot and the places already suggested, and stops any search.
+  const reset = useCallback(() => {
+    setSearch({ status: 'idle' })
+    setSpot(null)
+    setSeen({ key: null, ids: [] })
+  }, [])
+
+  return { spot, suggestion: toSuggestion(search, location), suggest, tapSpot, reset }
 }

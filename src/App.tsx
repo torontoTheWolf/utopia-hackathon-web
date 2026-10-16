@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import angryFace from './assets/ANGRY.png'
 import boredFace from './assets/BORDEM.png'
 import happyFace from './assets/HAPPY.png'
@@ -10,7 +10,7 @@ import { useCurrentPosition } from './geo'
 import GpsMap from './GpsMap'
 import { MAPS_APPS, preferredMapsApp } from './maps'
 import { PLACE_KINDS } from './places'
-import { ANSWERS, QUESTIONS, type Answer } from './questions'
+import { ANSWERS, QUESTIONS, type Answer, type Question } from './questions'
 import type { TravelMode } from './route'
 import { useRoute } from './useRoute'
 import { useSpot, type Suggestion } from './useSpot'
@@ -43,6 +43,19 @@ function withArticle(noun: string): string {
   return `${/^[aeiou]/i.test(noun) ? 'an' : 'a'} ${noun}`
 }
 
+// The question with a small number after the first mention of each option, like "Day¹ or night²?".
+function numberedQuestion({ text, options }: Question): ReactNode[] {
+  const parts: ReactNode[] = []
+  let rest = text
+  options.forEach((option, index) => {
+    const at = rest.toLowerCase().indexOf(option.toLowerCase())
+    if (at === -1) return
+    parts.push(rest.slice(0, at + option.length), <sup key={index}>{index + 1}</sup>)
+    rest = rest.slice(at + option.length)
+  })
+  return [...parts, rest]
+}
+
 export default function App() {
   const [emotion, setEmotion] = useState<Emotion | null>(null)
   const [answers, setAnswers] = useState<readonly (Answer | null)[]>(() => QUESTIONS.map(() => null))
@@ -55,7 +68,7 @@ export default function App() {
   const enterRef = useRef<HTMLButtonElement>(null)
   const { location, locate } = useCurrentPosition()
   const [travelMode, setTravelMode] = useState<TravelMode>('foot')
-  const { spot, suggestion, suggest, tapSpot } = useSpot(location, travelMode)
+  const { spot, suggestion, suggest, tapSpot, reset: resetSpot } = useSpot(location, travelMode)
   const route = useRoute(location, spot, travelMode)
   const suggestionLines = suggestionText(suggestion)
   // Enter waits for an emotion and an answer to every question.
@@ -126,22 +139,28 @@ export default function App() {
           <p id="summary-heading" className="summary-heading">
             In your own words
           </p>
-          <ol className="questions">
+          {/* The questions wait for an emotion: until one is picked they are greyed out and can't be answered. */}
+          <ol className={emotion === null ? 'questions is-locked' : 'questions'}>
             {QUESTIONS.map((question, index) => (
-              <li key={index} className="question" tabIndex={-1}>
+              <li key={index} className="question" tabIndex={emotion === null ? undefined : -1}>
                 <div className="question-body" role="radiogroup" aria-labelledby={`question-${index}`}>
-                  <span id={`question-${index}`}>{question}</span>
+                  <span id={`question-${index}`}>{numberedQuestion(question)}</span>
                   <span className="dots">
                     {ANSWERS.map((answer) => (
-                      <input
-                        key={answer}
-                        className="dot"
-                        type="radio"
-                        name={`question-${index}`}
-                        aria-label={String(answer)}
-                        checked={answers[index] === answer}
-                        onChange={() => setAnswers((current) => current.with(index, answer))}
-                      />
+                      <label key={answer} className="dot-option">
+                        <span className="dot-number" aria-hidden="true">
+                          {answer}
+                        </span>
+                        <input
+                          className="dot"
+                          type="radio"
+                          disabled={emotion === null}
+                          name={`question-${index}`}
+                          aria-label={`${answer}: ${question.options[answer - 1]}`}
+                          checked={answers[index] === answer}
+                          onChange={() => setAnswers((current) => current.with(index, answer))}
+                        />
+                      </label>
                     ))}
                   </span>
                 </div>
@@ -152,7 +171,7 @@ export default function App() {
             <button className="button filter-button" type="button" onClick={() => filterRef.current?.showModal()}>
               Filter
             </button>
-            {/* Once used, Clear stays highlighted until an answer is picked again. */}
+            {/* Clear also takes the spot off the map. Once used, it stays highlighted until an answer is picked again. */}
             <button
               className={cleared && unanswered ? 'button is-cleared' : 'button'}
               type="button"
@@ -160,6 +179,7 @@ export default function App() {
               onClick={() => {
                 setAnswers(QUESTIONS.map(() => null))
                 setCleared(true)
+                resetSpot()
               }}
             >
               Clear
