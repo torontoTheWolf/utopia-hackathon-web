@@ -42,8 +42,8 @@ export type PlaceKindId = keyof typeof PLACE_KINDS
 export const PLACES_FOR_EMOTION: Record<Emotion, readonly PlaceKindId[]> = {
   // Somewhere to enjoy the good mood.
   Happy: ['park', 'beach', 'viewpoint', 'waterfall', 'themePark', 'waterPark', 'zoo', 'aquarium', 'iceCream', 'marketplace'],
-  // Cool down, or burn it off at a gym or pool.
-  Angry: ['gym', 'swimmingPool', 'park', 'temple'],
+  // Cool down, take your mind off it, or burn it off at a gym or pool.
+  Angry: ['gym', 'swimmingPool', 'park', 'temple', 'cinema', 'zoo'],
   // Something new to do or see.
   Bored: ['cinema', 'museum', 'gallery', 'mall', 'bookshop', 'themePark', 'waterPark', 'zoo', 'aquarium', 'climbing', 'attraction', 'marketplace'],
   Hungry: ['restaurant', 'fastFood', 'foodCourt', 'marketplace', 'bakery', 'cafe'],
