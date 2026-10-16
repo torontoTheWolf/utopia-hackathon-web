@@ -188,7 +188,6 @@ body::after {
   background: var(--paper);
   box-shadow: 3px 3px 0 rgb(0 0 0 / 0.35);
   cursor: pointer;
-  transition: box-shadow 250ms ease;
 }
 
 .face img {
@@ -197,18 +196,9 @@ body::after {
   object-fit: contain;
 }
 
-/* The shadow darkens on the chosen face, and while a face is pressed, without changing its size. Like the buttons', it darkens in 150ms and fades back in 250ms. */
+/* The chosen face is filled like the chosen travel mode. Its shadow stays faint: only buttons that act on a single click darken theirs. */
 .face:has(:checked) {
   background: var(--button);
-}
-
-.face:has(:checked),
-.face:active {
-  box-shadow: 3px 3px 0 var(--ink);
-}
-
-.face:active {
-  transition-duration: 150ms;
 }
 
 .face:has(:focus-visible) {
@@ -355,6 +345,7 @@ body::after {
 /* The shadow is as faint as the panels'. Pressing the button darkens it in 150ms, and letting go fades it back in 250ms, so a quick click still shows. */
 .button {
   --button-shadow: 4px 4px 0 rgb(0 0 0 / 0.35);
+  --button-pressed-shadow: 4px 4px 0 var(--ink);
 
   min-height: var(--tap);
   padding: clamp(4px, 1.2vmin, 10px) clamp(10px, 2vmin, 16px);
@@ -371,7 +362,7 @@ body::after {
 }
 
 .button:active:not(:disabled) {
-  --button-shadow: 4px 4px 0 var(--ink);
+  --button-shadow: var(--button-pressed-shadow);
 
   transition-duration: 150ms;
 }
@@ -386,14 +377,11 @@ body::after {
 
 .button.large {
   --button-shadow: var(--shadow);
+  --button-pressed-shadow: 6px 6px 0 var(--ink);
 
   padding: clamp(6px, 3vmin - 3px, 24px);
   border: var(--border);
   font-size: min(1.25rem, 1rem + 0.5vmin);
-}
-
-.button.large:active:not(:disabled) {
-  --button-shadow: 6px 6px 0 var(--ink);
 }
 
 .button:disabled {
@@ -578,13 +566,6 @@ body::after {
   box-shadow: 4px 4px 0 rgb(0 0 0 / 0.35);
   font-size: 0.875rem;
   font-weight: 700;
-  transition: box-shadow 250ms ease;
-}
-
-/* The shadow darkens while walk or drive is pressed, at the buttons' pace. */
-.travel-mode:active {
-  box-shadow: 4px 4px 0 var(--ink);
-  transition-duration: 150ms;
 }
 
 .travel-mode label {
@@ -628,6 +609,11 @@ body::after {
   justify-self: center;
   width: 50%;
   min-width: fit-content;
+}
+
+/* Pressing the filter button leaves its shadow faint. */
+.filter-button:active:not(:disabled) {
+  --button-shadow: var(--shadow);
 }
 
 .filter-dialog {
