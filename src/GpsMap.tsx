@@ -2,7 +2,7 @@ import * as L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { useEffect, useEffectEvent, useRef } from 'react'
 import type { LatLng, LocationState } from './geo'
-import { TRAVEL_MODES, type TravelMode } from './route'
+import { formatDistance, TRAVEL_MODES, type TravelMode } from './route'
 import type { RouteState } from './useRoute'
 import type { Spot } from './useSpot'
 
@@ -170,6 +170,7 @@ export default function GpsMap({ location, locate, spot, onTap, route, travelMod
   }, [open, onOpenChange])
 
   const text = LOCATION_TEXT[location.status]
+  const steps = spot && route.status === 'ready' ? (route.route?.steps ?? []) : []
 
   return (
     <div className="gps-slot">
@@ -187,6 +188,19 @@ export default function GpsMap({ location, locate, spot, onTap, route, travelMod
               {!spot && <p>Tap the map to choose a spot</p>}
               {text.notice && <p>{text.notice}</p>}
             </div>
+            {steps.length > 0 && (
+              <details className="gps-directions">
+                <summary>Directions</summary>
+                <ol>
+                  {steps.map((step, index) => (
+                    <li key={index}>
+                      {step.text}
+                      {step.distanceKm > 0 && <span className="gps-step-distance">{formatDistance(step.distanceKm)}</span>}
+                    </li>
+                  ))}
+                </ol>
+              </details>
+            )}
             <button ref={closeButtonRef} className="button gps-close" type="button" onClick={() => onOpenChange(false)}>
               Close map
             </button>

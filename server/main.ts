@@ -5,6 +5,7 @@ import type { LatLng } from '../src/geo.ts'
 import { distanceKm, PLACE_KINDS, type PlaceKindId } from '../src/places.ts'
 import { TRAVEL_MODES, type Route, type TravelMode } from '../src/route.ts'
 import { buildPlaceIndex, placesNear, type Names, type PlaceIndex } from './placeIndex.ts'
+import { startGraphHopper, type GraphHopper } from './graphhopper.ts'
 import { createRouter, loadRoadGraph, type Router } from './roadGraph.ts'
 
 const HOST = '127.0.0.1'
@@ -17,10 +18,13 @@ const MAX_RADIUS_KM = 50
 const MAX_ROUTE_KM = 50
 const REQUESTS_PER_MINUTE = 300
 const MAX_FACTOR = 10
+// GraphHopper measures routes to this many of the closest places by the built-in router, and the shortest wins.
+const CANDIDATES = 5
 
 const pbfPath = process.argv[2] ?? DEFAULT_EXTRACT
 let index: PlaceIndex
 let router: Router
+let graphHopper: GraphHopper
 
 // When Vite starts the API, it keeps an IPC channel open until it exits.
 process.on('disconnect', () => process.exit())
@@ -33,8 +37,11 @@ const server = createServer((request, response) => {
   const url = new URL(request.url ?? '/', `http://${HOST}`)
   if (isOverLimit(request)) return send(response, 429, { error: 'Too many requests' }, { 'Retry-After': '60' })
   if (request.method === 'GET' && url.pathname === '/api/places') return servePlaces(url.searchParams, request, response)
-  if (request.method === 'GET' && url.pathname === '/api/route') return serveRoute(url.searchParams, response)
-  if (request.method === 'GET' && url.pathname === '/api/suggest') return serveSuggestion(url.searchParams, request, response)
+  const failed = () => send(response, 500, { error: 'Something went wrong' })
+  if (request.method === 'GET' && url.pathname === '/api/route') return void serveRoute(url.searchParams, request, response).catch(failed)
+  if (request.method === 'GET' && url.pathname === '/api/suggest') {
+    return void serveSuggestion(url.searchParams, request, response).catch(failed)
+  }
   send(response, 404, { error: 'Not found' })
 })
 
@@ -48,6 +55,7 @@ server.on('error', (error: NodeJS.ErrnoException) => {
 server.listen(PORT, HOST, () => {
   index = loadIndex(pbfPath)
   router = createRouter(loadRoadGraph(pbfPath))
+  graphHopper = startGraphHopper(pbfPath)
   console.log(`Places API listening on http://${HOST}:${PORT}`)
 })
 
@@ -93,7 +101,7 @@ function servePlaces(params: URLSearchParams, request: IncomingMessage, response
 }
 
 // Answers 404 when the two points aren't joined by roads for the mode, or either is more than a kilometre from one.
-function serveRoute(params: URLSearchParams, response: ServerResponse): void {
+async function serveRoute(params: URLSearchParams, request: IncomingMessage, response: ServerResponse): Promise<void> {
   const [from, to] = ['from', 'to'].map((name) => {
     const [lat = null, lng = null, ...rest] = params.get(name)?.split(',') ?? []
     return rest.length === 0 ? toLatLng(lat, lng) : null
@@ -103,7 +111,7 @@ function serveRoute(params: URLSearchParams, response: ServerResponse): void {
     return send(response, 400, { error: 'Expected from and to as lat,lng and a mode' })
   }
   if (distanceKm(from, to) > MAX_ROUTE_KM) return send(response, 400, { error: `from and to must be within ${MAX_ROUTE_KM} km` })
-  const route = router.route(from, to, mode as TravelMode)
+  const route = await findRoute(from, to, mode as TravelMode, request)
   if (route === null) return send(response, 404, { error: 'No route' })
   send(response, 200, routeJson(route))
 }
@@ -111,7 +119,7 @@ function serveRoute(params: URLSearchParams, response: ServerResponse): void {
 // The place of any of the kinds that is closest by road for the travel mode, with the route there, skipping the place
 // ids in `exclude`. A kind written as `cafe:2` counts as twice as far away. Answers 404 when no place within radiusKm
 // can be reached by road.
-function serveSuggestion(params: URLSearchParams, request: IncomingMessage, response: ServerResponse): void {
+async function serveSuggestion(params: URLSearchParams, request: IncomingMessage, response: ServerResponse): Promise<void> {
   const kinds = new Map(
     (params.get('kinds') ?? '').split(',').map((item) => {
       const [kind, factor = '1'] = item.split(':')
@@ -138,11 +146,14 @@ function serveSuggestion(params: URLSearchParams, request: IncomingMessage, resp
       .filter((place) => !exclude.has(place.id))
       .map((place) => ({ ...place, kind, factor })),
   )
-  const nearest = router.nearest(center, candidates, mode as TravelMode)
-  if (nearest === null) return send(response, 404, { error: 'No places that roads reach' })
-  const place = candidates[nearest]
-  // The same route /api/route gives, so it doesn't change when the app asks for it again.
-  const route = router.route(center, place.position, mode as TravelMode)
+  const nearest = router.nearest(center, candidates, mode as TravelMode, CANDIDATES)
+  if (nearest.length === 0) return send(response, 404, { error: 'No places that roads reach' })
+  // The same routes /api/route gives, so they don't change when the app asks again.
+  const routed = await Promise.all(
+    nearest.map(async (index) => ({ place: candidates[index], route: await findRoute(center, candidates[index].position, mode as TravelMode, request) })),
+  )
+  const length = ({ place, route }: (typeof routed)[number]) => (route === null ? Infinity : route.distanceKm * place.factor)
+  const { place, route } = routed.reduce((best, next) => (length(next) < length(best) ? next : best))
   const languages = preferredLanguages(request.headers['accept-language'])
   send(response, 200, {
     place: { id: place.id, name: localName(place.names, languages), kind: place.kind, ...place.position },
@@ -150,10 +161,16 @@ function serveSuggestion(params: URLSearchParams, request: IncomingMessage, resp
   })
 }
 
-function routeJson({ distanceKm, path }: Route) {
+// GraphHopper's route, with directions, or the built-in router's when GraphHopper isn't ready or finds none.
+async function findRoute(from: LatLng, to: LatLng, mode: TravelMode, request: IncomingMessage): Promise<Route | null> {
+  const locale = preferredLanguages(request.headers['accept-language'])[0]?.split('-')[0] ?? 'en'
+  return (await graphHopper.route(from, to, mode, locale)) ?? router.route(from, to, mode)
+}
+
+function routeJson({ distanceKm, path, steps }: Route) {
   // Six decimals is about 10 cm, plenty for drawing.
   const round = (degrees: number) => Math.round(degrees * 1e6) / 1e6
-  return { distanceKm, path: path.map(({ lat, lng }) => [round(lat), round(lng)]) }
+  return { distanceKm, path: path.map(({ lat, lng }) => [round(lat), round(lng)]), steps }
 }
 
 function toLatLng(lat: string | null, lng: string | null): LatLng | null {

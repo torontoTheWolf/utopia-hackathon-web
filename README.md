@@ -23,7 +23,13 @@ It reads the OpenStreetMap extract `tmp/thailand-261014.osm.pbf` (from [Geofabri
 
 The first start takes about a minute and a half to index the places and build the road graph, and requests wait until it finishes. Both are cached next to the extract, as `.places.json` and `.roads.bin` (about 660 MB), and later starts load them in under a second. The places cache is rebuilt when the extract or the place kinds in `src/places.ts` change, and the road graph when the extract changes. The running API uses about 1.1 GB of memory. To use another extract, put it in `tmp/` and change `DEFAULT_EXTRACT` in `server/main.ts`, or pass its path: `npm run api -- tmp/other.osm.pbf`.
 
-Place names follow the browser's language when the map has a name in that language. Routes ignore turn restrictions, so a drive can be slightly shorter than the real one.
+Place names follow the browser's language when the map has a name in that language.
+
+### Routes from GraphHopper
+
+Routes come from [GraphHopper](https://github.com/graphhopper/graphhopper), which the API runs alongside itself. It respects turn restrictions, barriers and access rules, and gives the turn-by-turn directions shown on the open map. It needs Java 17 or later. The first start downloads GraphHopper 11.1 from Maven Central (47 MB, checked against a pinned SHA-256) into `tmp/graphhopper/`, then imports the extract, which takes about 15 minutes and up to 7 GB of memory. Later starts take about half a minute. Until it's ready, and without Java, routes come from the API's own router, which has no directions and ignores turn restrictions. Its settings are in `server/graphhopper.yml`, and its log is `tmp/graphhopper/graphhopper.log`. When the extract changes, it imports it into a new `tmp/graphhopper/graph-…` folder, and the old one can be deleted.
+
+To pick a suggestion, the API's own router finds the 5 closest places, and the one with the shortest GraphHopper route wins.
 
 ### Share the API with the live site
 

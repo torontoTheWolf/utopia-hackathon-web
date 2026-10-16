@@ -559,6 +559,38 @@ body::after {
   margin-left: auto;
 }
 
+/* Turn-by-turn directions from GraphHopper, folded away until asked for. */
+.gps-directions {
+  min-width: 0;
+  max-width: 24rem;
+  border: 3px solid var(--ink);
+  background: var(--paper);
+  box-shadow: 4px 4px 0 var(--ink);
+}
+
+.gps-directions summary {
+  padding: 8px 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.gps-directions ol {
+  max-height: 50dvh;
+  margin: 0;
+  padding: 0 12px 10px 34px;
+  overflow-y: auto;
+}
+
+.gps-directions li + li {
+  margin-top: 4px;
+}
+
+.gps-step-distance {
+  margin-left: 6px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
 .gps-credit {
   margin: 0;
   padding: 2px 8px;

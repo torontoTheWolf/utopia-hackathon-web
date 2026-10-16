@@ -9,7 +9,7 @@ import { useCurrentPosition } from './geo'
 import GpsMap from './GpsMap'
 import { MAPS_APPS, preferredMapsApp } from './maps'
 import { PLACE_KINDS } from './places'
-import { TRAVEL_MODES, type TravelMode } from './route'
+import { formatDistance, TRAVEL_MODES, type TravelMode } from './route'
 import { useRoute, type RouteState } from './useRoute'
 import { useSpot, type Suggestion } from './useSpot'
 
@@ -47,11 +47,6 @@ function suggestionText<S extends Suggestion['status']>(suggestion: SuggestionOf
 
 function withArticle(noun: string): string {
   return `${/^[aeiou]/i.test(noun) ? 'an' : 'a'} ${noun}`
-}
-
-function formatDistance(km: number): string {
-  const metres = Math.round(km * 100) * 10
-  return metres < 1000 ? `${metres} m` : `${km.toFixed(1)} km`
 }
 
 export default function App() {

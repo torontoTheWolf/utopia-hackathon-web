@@ -187,9 +187,9 @@ type RoadPoint = { edge: number; from: number; to: number; along: number; metres
 
 export type Router = {
   route: (from: LatLng, to: LatLng, mode: TravelMode) => Route | null
-  // The index of the target that is closest by road for the mode, with each target's distance multiplied by its
-  // factor, or null when none can be reached.
-  nearest: (from: LatLng, targets: readonly { position: LatLng; factor: number }[], mode: TravelMode) => number | null
+  // The indexes of up to `count` targets that are closest by road for the mode, closest first, with each target's
+  // distance multiplied by its factor.
+  nearest: (from: LatLng, targets: readonly { position: LatLng; factor: number }[], mode: TravelMode, count: number) => number[]
 }
 
 // Routes start and end on the closest point of the closest road, and follow roads and paths in between.
@@ -378,11 +378,11 @@ export function createRouter(graph: RoadGraph): Router {
       return { distanceKm: distance / 1000, path }
     },
 
-    nearest(from, targets, mode) {
+    nearest(from, targets, mode, count) {
       const bit = MODE_BITS[mode]
       const lngScale = Math.cos((from.lat * Math.PI) / 180)
       const start = closestRoadPoint(from, bit, lngScale)
-      if (start === null || targets.length === 0) return null
+      if (start === null || targets.length === 0) return []
       // Closest by distance in either mode, so the order matches the distances shown.
       const stepCost: StepCost = (length) => length
       const cellKey = (row: number, col: number) => row * 100_000 + col
@@ -404,14 +404,21 @@ export function createRouter(graph: RoadGraph): Router {
         return found
       }
       const minFactor = Math.min(...targets.map(({ factor }) => factor))
-      let best = { cost: Infinity, target: -1 }
+      // The best targets so far, cheapest first, and the cost a target must beat to join them.
+      const best: { target: number; cost: number }[] = []
+      const bound = () => (best.length < count ? Infinity : best[count - 1].cost)
       // `away` is how far the target is from the road where the trip would leave it.
       const consider = (target: number, length: number, away: number) => {
         const total = (length + away) * targets[target].factor
-        if (total >= best.cost) return
+        if (total >= bound()) return
+        const known = best.findIndex((entry) => entry.target === target)
+        if (known >= 0 && best[known].cost <= total) return
         // A road this close will do whichever road is closest, which is slower to find.
         if (away > SLACK_METRES && away > roadMetres(target) + SLACK_METRES) return
-        best = { cost: total, target }
+        if (known >= 0) best.splice(known, 1)
+        best.push({ target, cost: total })
+        best.sort((a, b) => a.cost - b.cost)
+        best.length = Math.min(best.length, count)
       }
 
       // Targets on the road you're on, reached along it.
@@ -428,7 +435,7 @@ export function createRouter(graph: RoadGraph): Router {
       }
 
       explore(seedsFrom(start, bit, stepCost, lngScale), bit, lngScale, stepCost, () => 0, (node, reached) => {
-        if (reached * minFactor >= best.cost) return true
+        if (reached * minFactor >= bound()) return true
         const row = Math.floor(lat[node] / UNITS_PER_DEGREE / PLACE_CELL)
         const col = Math.floor(lng[node] / UNITS_PER_DEGREE / PLACE_CELL)
         for (let r = row - 1; r <= row + 1; r++) {
@@ -445,7 +452,7 @@ export function createRouter(graph: RoadGraph): Router {
         }
         return false
       })
-      return best.target < 0 ? null : best.target
+      return best.map(({ target }) => target)
     },
   }
 }

@@ -7,7 +7,10 @@ export const TRAVEL_MODES: Record<TravelMode, { label: string; phrase: string }>
   car: { label: 'Drive', phrase: 'by car' },
 }
 
-export type Route = { distanceKm: number; path: LatLng[] }
+// `steps` are turn-by-turn directions, when the router gives them.
+export type Route = { distanceKm: number; path: LatLng[]; steps?: RouteStep[] }
+
+export type RouteStep = { text: string; distanceKm: number }
 
 export type FetchDeps = {
   fetch: (url: string, init: { signal: AbortSignal }) => Promise<Response>
@@ -37,7 +40,20 @@ export function parseRoute(json: unknown): Route | null {
   const points = path.flatMap((point: unknown): LatLng[] =>
     Array.isArray(point) && isFiniteNumber(point[0]) && isFiniteNumber(point[1]) ? [{ lat: point[0], lng: point[1] }] : [],
   )
-  return points.length >= 2 ? { distanceKm, path: points } : null
+  if (points.length < 2) return null
+  if (!('steps' in json) || !Array.isArray(json.steps)) return { distanceKm, path: points }
+  const steps = json.steps.flatMap((step: unknown): RouteStep[] =>
+    typeof step === 'object' && step !== null && 'text' in step && 'distanceKm' in step &&
+    typeof step.text === 'string' && isFiniteNumber(step.distanceKm)
+      ? [{ text: step.text, distanceKm: step.distanceKm }]
+      : [],
+  )
+  return { distanceKm, path: points, steps }
+}
+
+export function formatDistance(km: number): string {
+  const metres = Math.round(km * 100) * 10
+  return metres < 1000 ? `${metres} m` : `${km.toFixed(1)} km`
 }
 
 function isFiniteNumber(value: unknown): value is number {
