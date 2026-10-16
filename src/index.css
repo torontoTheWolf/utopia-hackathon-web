@@ -186,7 +186,9 @@ body::after {
   border: 3px solid var(--ink);
   border-radius: 12px;
   background: var(--paper);
+  box-shadow: 3px 3px 0 rgb(0 0 0 / 0.35);
   cursor: pointer;
+  transition: box-shadow 250ms ease;
 }
 
 .face img {
@@ -195,10 +197,18 @@ body::after {
   object-fit: contain;
 }
 
-/* The shadow marks the chosen face without changing its size. */
+/* The shadow darkens on the chosen face, and while a face is pressed, without changing its size. Like the buttons', it darkens in 150ms and fades back in 250ms. */
 .face:has(:checked) {
   background: var(--button);
+}
+
+.face:has(:checked),
+.face:active {
   box-shadow: 3px 3px 0 var(--ink);
+}
+
+.face:active {
+  transition-duration: 150ms;
 }
 
 .face:has(:focus-visible) {
@@ -342,22 +352,32 @@ body::after {
   font-weight: 700;
 }
 
+/* The shadow is as faint as the panels'. Pressing the button darkens it in 150ms, and letting go fades it back in 250ms, so a quick click still shows. */
 .button {
+  --button-shadow: 4px 4px 0 rgb(0 0 0 / 0.35);
+
   min-height: var(--tap);
   padding: clamp(4px, 1.2vmin, 10px) clamp(10px, 2vmin, 16px);
   border: 3px solid var(--ink);
   border-radius: var(--radius);
   background: var(--paper);
-  box-shadow: 4px 4px 0 var(--ink);
+  box-shadow: var(--button-shadow);
   color: var(--ink);
   font-weight: 700;
   text-align: center;
   text-decoration: none;
   cursor: pointer;
+  transition: box-shadow 250ms ease;
+}
+
+.button:active:not(:disabled) {
+  --button-shadow: 4px 4px 0 var(--ink);
+
+  transition-duration: 150ms;
 }
 
 .button:focus-visible {
-  box-shadow: var(--halo), 4px 4px 0 var(--ink);
+  box-shadow: var(--halo), var(--button-shadow);
 }
 
 .button.primary {
@@ -365,29 +385,21 @@ body::after {
 }
 
 .button.large {
+  --button-shadow: var(--shadow);
+
   padding: clamp(6px, 3vmin - 3px, 24px);
   border: var(--border);
-  box-shadow: var(--shadow);
   font-size: min(1.25rem, 1rem + 0.5vmin);
 }
 
-.button.large:focus-visible {
-  box-shadow: var(--halo), var(--shadow);
+.button.large:active:not(:disabled) {
+  --button-shadow: 6px 6px 0 var(--ink);
 }
 
 .button:disabled {
   background: var(--paper);
   color: var(--muted);
   cursor: not-allowed;
-}
-
-/* Enter's shadow is as faint as the panels'. */
-.summary-submit .button {
-  box-shadow: 4px 4px 0 rgb(0 0 0 / 0.35);
-}
-
-.summary-submit .button:focus-visible {
-  box-shadow: var(--halo), 4px 4px 0 rgb(0 0 0 / 0.35);
 }
 
 .gps-slot {
@@ -563,9 +575,16 @@ body::after {
   border-radius: var(--radius);
   overflow: hidden;
   background: var(--paper);
-  box-shadow: 4px 4px 0 var(--ink);
+  box-shadow: 4px 4px 0 rgb(0 0 0 / 0.35);
   font-size: 0.875rem;
   font-weight: 700;
+  transition: box-shadow 250ms ease;
+}
+
+/* The shadow darkens while walk or drive is pressed, at the buttons' pace. */
+.travel-mode:active {
+  box-shadow: 4px 4px 0 var(--ink);
+  transition-duration: 150ms;
 }
 
 .travel-mode label {
