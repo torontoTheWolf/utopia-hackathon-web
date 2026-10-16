@@ -237,7 +237,7 @@ export default function App() {
           <form method="dialog">
             {/* Looks for another place without closing, like pressing Enter again. */}
             <button
-              className="button primary"
+              className="button primary try-again"
               type="button"
               onClick={() => {
                 if (complete) suggest(emotion, answers)

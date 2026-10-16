@@ -164,12 +164,12 @@ body::after {
   line-height: 1.2;
 }
 
-/* 10px from the panel's right wall, matching the heading on the left. */
+/* As far from the panel's right wall as the faces are apart, and at least 10px, like the heading on the left. */
 .faces {
   grid-area: 1 / -2;
   display: flex;
   gap: var(--face-gap);
-  margin-right: calc(10px - var(--inset) * 1.2);
+  margin-right: calc(max(10px, var(--face-gap)) - var(--inset) * 1.2);
 }
 
 .face {
@@ -772,7 +772,16 @@ body::after {
 .popup form {
   display: flex;
   justify-content: flex-end;
+  align-items: center;
   gap: 12px;
+}
+
+/* Smaller than Close, at the other end of the row. */
+.popup .try-again {
+  min-height: 32px;
+  margin-right: auto;
+  padding: 4px 10px;
+  font-size: 0.875rem;
 }
 
 .button-icon {
@@ -796,7 +805,7 @@ body::after {
 
 /* Only what is inside the panel can be sized from its width. */
 .help > * {
-  --text: clamp(12.5px, 8.5cqi, 1.125rem);
+  --text: clamp(14px, 10cqi, 1.25rem);
 
   font-size: var(--text);
 }
