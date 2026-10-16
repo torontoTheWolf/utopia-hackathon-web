@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useEffectEvent, useState } from 'react'
 import type { Emotion } from './emotions'
 import type { LatLng, LocationState } from './geo'
-import { distanceKm, type Place } from './places'
+import { distanceKm, type Place, type PlaceKindId } from './places'
 import { formatAnswers, type Answer } from './questions'
 import type { Route, TravelMode } from './route'
-import { suggestPlace } from './suggest'
+import { kindsFor, suggestPlace } from './suggest'
 
 export type Suggestion =
   | { status: 'idle' }
@@ -12,6 +12,7 @@ export type Suggestion =
   | { status: 'searching'; emotion: Emotion }
   | { status: 'found'; emotion: Emotion; place: Place; reason: string | null; distanceKm: number }
   | { status: 'none'; emotion: Emotion }
+  | { status: 'filtered'; emotion: Emotion }
   | { status: 'failed'; emotion: Emotion }
   | { status: 'noLocation'; emotion: Emotion }
 
@@ -23,7 +24,7 @@ export type Spot =
 type Search =
   | { status: 'idle' }
   | { status: 'pending'; emotion: Emotion; answers: readonly (Answer | null)[] }
-  | Extract<Suggestion, { status: 'found' | 'none' | 'failed' }>
+  | Extract<Suggestion, { status: 'found' | 'none' | 'filtered' | 'failed' }>
 
 // The local places API answers in a few milliseconds, so results wait this long to not appear the instant you tap.
 const MIN_SEARCH_MS = 150
@@ -58,7 +59,8 @@ function toSuggestion(search: Search, location: LocationState): Suggestion {
 
 // Suggests a place for an emotion and answers, Claude's pick or else the closest, and another each time the same ones are
 // entered again.
-export function useSpot(location: LocationState, mode: TravelMode) {
+// `avoided` are the kinds of place filtered out; a change applies from the next search.
+export function useSpot(location: LocationState, mode: TravelMode, avoided: ReadonlySet<PlaceKindId>) {
   const [search, setSearch] = useState<Search>({ status: 'idle' })
   const [spot, setSpot] = useState<Spot | null>(null)
   // Keyed on the emotion and answers together, so changing either starts again from the best place.
@@ -73,10 +75,10 @@ export function useSpot(location: LocationState, mode: TravelMode) {
     const deps = { fetch, signal }
     const exclude = seen.key === key ? seen.ids : []
     const next = async () => {
-      const found = await suggestPlace(emotion, answers, from, mode, exclude, deps)
+      const found = await suggestPlace(emotion, answers, avoided, from, mode, exclude, deps)
       if (found !== null || exclude.length === 0) return { found, skipped: exclude }
       // Every place nearby has been suggested, so start again from the closest.
-      return { found: await suggestPlace(emotion, answers, from, mode, [], deps), skipped: [] }
+      return { found: await suggestPlace(emotion, answers, avoided, from, mode, [], deps), skipped: [] }
     }
     atLeast(MIN_SEARCH_MS, next()).then(
       ({ found, skipped }) => {
@@ -106,9 +108,17 @@ export function useSpot(location: LocationState, mode: TravelMode) {
     return () => controller.abort()
   }, [search, located])
 
+  // With every kind of place for the emotion filtered out, there is nothing to search for.
   const suggest = useCallback(
-    (emotion: Emotion, answers: readonly (Answer | null)[]) => setSearch({ status: 'pending', emotion, answers }),
-    [],
+    (emotion: Emotion, answers: readonly (Answer | null)[]) => {
+      if (kindsFor(emotion, avoided).length > 0) {
+        setSearch({ status: 'pending', emotion, answers })
+        return
+      }
+      setSearch({ status: 'filtered', emotion })
+      setSpot(withoutSuggestedSpot)
+    },
+    [avoided],
   )
 
   const tapSpot = useCallback((position: LatLng) => {

@@ -7,14 +7,16 @@ import { QUESTIONS, type Answer } from '../src/questions.ts'
 // Without a key, or when Claude fails, is slow or declines, pickPlace returns null and the API suggests the closest.
 
 const MODEL = 'claude-haiku-5-5'
-// Long enough for a quick pick, short enough that the closest place still comes back promptly when Claude doesn't.
-const TIMEOUT_MS = 6000
+// A pick takes 2 to 4 seconds. One try, so a stuck call falls back to the closest place within this.
+const TIMEOUT_MS = 10_000
 
 const SYSTEM = `You help someone choose where to go right now. You get how they feel, the option they chose for each of \
 a few questions (null when they didn't answer), and the numbered places nearby they can reach, with each one's distance \
 by road in km. Choose the one place that suits them best. How they feel and their answers matter more than \
 distance, but when nothing else separates two places, prefer the closer one. Give the place's number and one short, \
-warm sentence, spoken to them, on why it suits them. Don't mention distances, numbers, or the questions themselves.`
+warm sentence, spoken to them, on why it suits them. The app shows the place's name next to your sentence, so call \
+the place "it" or "this park", "this café" and so on, never by its name or a translation of it. Don't mention distances, \
+numbers, or the questions themselves.`
 
 // The most places Claude chooses between. The schema stays the same from one request to the next, so the API compiles
 // it once and reuses it, where a list of each request's place ids would cost a compile every time.
@@ -41,7 +43,7 @@ let client: Anthropic | null | undefined
 
 // Made on first use, after main.ts has loaded .env.local.
 function anthropic(): Anthropic | null {
-  client ??= process.env.ANTHROPIC_API_KEY ? new Anthropic({ timeout: TIMEOUT_MS, maxRetries: 1 }) : null
+  client ??= process.env.ANTHROPIC_API_KEY ? new Anthropic({ timeout: TIMEOUT_MS, maxRetries: 0 }) : null
   return client
 }
 

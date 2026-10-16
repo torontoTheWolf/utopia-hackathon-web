@@ -16,12 +16,13 @@ const SEARCH_RADIUS_KM = 7.5
 export async function suggestPlace(
   emotion: Emotion,
   answers: readonly (Answer | null)[],
+  avoided: ReadonlySet<PlaceKindId>,
   from: LatLng,
   mode: TravelMode,
   exclude: readonly string[],
   { fetch, signal }: FetchDeps,
 ): Promise<PlaceSuggestion | null> {
-  const response = await fetch(suggestUrl(emotion, answers, from, mode, exclude), { signal })
+  const response = await fetch(suggestUrl(emotion, answers, avoided, from, mode, exclude), { signal })
   if (response.status === 404) return null
   if (!response.ok) throw new Error(`Places API responded ${response.status}`)
   const suggestion = parseSuggestion(await response.json())
@@ -29,9 +30,15 @@ export async function suggestPlace(
   return suggestion
 }
 
+// The kinds of place for the emotion, less the ones filtered out.
+export function kindsFor(emotion: Emotion, avoided: ReadonlySet<PlaceKindId>): readonly PlaceKindId[] {
+  return PLACES_FOR_EMOTION[emotion].filter((kind) => !avoided.has(kind))
+}
+
 export function suggestUrl(
   emotion: Emotion,
   answers: readonly (Answer | null)[],
+  avoided: ReadonlySet<PlaceKindId>,
   from: LatLng,
   mode: TravelMode,
   exclude: readonly string[],
@@ -39,7 +46,7 @@ export function suggestUrl(
   const params = new URLSearchParams({
     emotion,
     answers: formatAnswers(answers),
-    kinds: PLACES_FOR_EMOTION[emotion]
+    kinds: kindsFor(emotion, avoided)
       .map((kind) => {
         const factor = DISTANCE_FACTORS[emotion]?.[kind]
         return factor === undefined ? kind : `${kind}:${factor}`

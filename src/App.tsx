@@ -8,8 +8,9 @@ import { burstConfetti } from './confetti'
 import { EMOTIONS, type Emotion } from './emotions'
 import { useCurrentPosition } from './geo'
 import GpsMap from './GpsMap'
+import { FILTERABLE_KINDS, loadAvoided, saveAvoided, withKind } from './filter'
 import { MAPS_APPS, preferredMapsApp } from './maps'
-import { PLACE_KINDS } from './places'
+import { PLACE_KINDS, type PlaceKindId } from './places'
 import { ANSWERS, QUESTIONS, type Answer, type Question } from './questions'
 import type { TravelMode } from './route'
 import { useRoute } from './useRoute'
@@ -28,15 +29,19 @@ const SUGGESTION_TEXT: { [S in Suggestion['status']]: (suggestion: SuggestionOf<
   found: ({ place, reason }) => [
     `Try ${place.name}, ${withArticle(PLACE_KINDS[place.kind].label)}.`,
     ...(reason === null ? [] : [reason]),
-    'Press Enter again for another.',
   ],
   none: () => ['No matching places nearby. Tap the map to choose a spot instead.'],
-  failed: () => ["Couldn't reach the places service. Press Enter to try again."],
+  filtered: ({ emotion }) => [`The filter leaves out every kind of place for ${emotion}. Change it to get a suggestion.`],
+  failed: () => ["Couldn't reach the places service."],
   noLocation: () => ['Allow location access to get a suggestion.'],
 }
 
 function suggestionText<S extends Suggestion['status']>(suggestion: SuggestionOf<S>): readonly string[] {
   return SUGGESTION_TEXT[suggestion.status](suggestion)
+}
+
+function capitalised(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1)
 }
 
 function withArticle(noun: string): string {
@@ -68,8 +73,11 @@ export default function App() {
   const enterRef = useRef<HTMLButtonElement>(null)
   const { location, locate } = useCurrentPosition()
   const [travelMode, setTravelMode] = useState<TravelMode>('foot')
-  const { spot, suggestion, suggest, tapSpot, reset: resetSpot } = useSpot(location, travelMode)
+  const [avoided, setAvoided] = useState<ReadonlySet<PlaceKindId>>(loadAvoided)
+  const { spot, suggestion, suggest, tapSpot, reset: resetSpot } = useSpot(location, travelMode, avoided)
   const route = useRoute(location, spot, travelMode)
+  useEffect(() => saveAvoided(avoided), [avoided])
+
   const suggestionLines = suggestionText(suggestion)
   // Enter waits for an emotion and an answer to every question.
   const complete = emotion !== null && !answers.includes(null)
@@ -111,7 +119,7 @@ export default function App() {
           <li>Choose Walk or Drive.</li>
           <li>Tap Get directions to go.</li>
         </ol>
-        <p className="help-tip">Press Enter again for another place, or Clear to start over.</p>
+        <p className="help-tip">Tap Try again for another place, or Clear to start over.</p>
       </aside>
       <main className="center">
         <fieldset className="panel emotion" inert={mapOpen} aria-labelledby="emotion-heading">
@@ -203,7 +211,21 @@ export default function App() {
         </form>
         <dialog ref={filterRef} className="panel popup" aria-labelledby="filter-title">
           <h2 id="filter-title">Filter</h2>
-          <p>Places you don't want to be sent to will go here.</p>
+          <p>Tick the kinds of place you never want to be sent to.</p>
+          <ul className="filter-kinds">
+            {FILTERABLE_KINDS.map((kind) => (
+              <li key={kind}>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={avoided.has(kind)}
+                    onChange={(event) => setAvoided((current) => withKind(current, kind, event.target.checked))}
+                  />
+                  {capitalised(PLACE_KINDS[kind].label)}
+                </label>
+              </li>
+            ))}
+          </ul>
           <form method="dialog">
             <button className="button">Close</button>
           </form>
@@ -213,6 +235,19 @@ export default function App() {
             {suggestionLines.join(' ')}
           </p>
           <form method="dialog">
+            {/* Looks for another place without closing, like pressing Enter again. */}
+            <button
+              className="button primary"
+              type="button"
+              onClick={() => {
+                if (complete) suggest(emotion, answers)
+              }}
+            >
+              <svg className="button-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+              Try again
+            </button>
             <button className="button">Close</button>
           </form>
           <div ref={confettiRef} className="confetti" aria-hidden="true" />
@@ -230,12 +265,12 @@ export default function App() {
         />
         <div className="actions" inert={mapOpen}>
           {spot ? (
-            <a className="button primary large" href={mapsApp.directionsUrl(spot.position, travelMode)} target="_blank" rel="noopener noreferrer">
+            <a className="button primary large" href={mapsApp.directionsUrl({ position: spot.position, name: spot.origin === 'suggested' ? spot.name : undefined }, travelMode)} target="_blank" rel="noopener noreferrer">
               Get directions
             </a>
           ) : (
             <button className="button primary large" type="button" disabled>
-              {emotion === null ? 'Pick an emotion or tap the map' : 'Get directions'}
+              Get directions
             </button>
           )}
         </div>

@@ -148,10 +148,19 @@ body::after {
   gap: var(--tight);
 }
 
-/* 10px from the panel's left wall, out into the panel's side padding. */
+/* With room to spare, as on tablets and computers, the faces spread out to use it, up to 3rem apart. */
+@container (width >= 40rem) {
+  .emotion-body {
+    --face-gap: clamp(var(--tight) * 1.6, 3.5cqi, 3rem);
+  }
+}
+
+/* 10px from the panel's left wall, out into the panel's side padding. A little larger where the bar is wide; on phones
+   it stays at 1.125rem, which already takes two lines. */
 .emotion-heading {
   grid-area: 1 / 1;
   margin: 0 0 0 calc(10px - var(--inset) * 1.2);
+  font-size: clamp(1.125rem, 3.2cqi, 1.375rem);
   line-height: 1.2;
 }
 
@@ -197,11 +206,14 @@ body::after {
   --heading-size: min(1.125rem, 9.6cqi);
   /* The question cards' corners, which Filter and Enter share. */
   --card-radius: 8px;
+  /* Half the room the buttons leave below them, which moves above the heading so the two gaps match. */
+  --lift: calc((var(--heading-size) * 1.4 + var(--tight)) / 2);
 
   grid-area: summary;
   display: flex;
   flex-direction: column;
   gap: var(--tight);
+  padding-top: calc(var(--inset) + var(--lift));
   container-type: inline-size;
 }
 
@@ -329,14 +341,14 @@ body::after {
   cursor: not-allowed;
 }
 
-/* Filter, Clear and Enter sit as far above the bottom of the panel as the first question sits below its top: the heading's one line and the gap under it. Filter is at one end, Enter at the other, and Clear halfway between. */
+/* Filter, Clear and Enter are as far above the bottom of the box as the heading is below its top. Filter is at one end, Enter at the other, and Clear halfway between. */
 .summary-submit {
   display: flex;
   flex-wrap: wrap;
   justify-content: space-between;
   align-items: center;
   gap: var(--tight) 12px;
-  margin-bottom: calc(var(--heading-size) * 1.4 + var(--tight));
+  margin-bottom: var(--lift);
 }
 
 .summary-submit .button {
@@ -399,13 +411,16 @@ body::after {
   background: var(--button);
 }
 
+/* The directions bar. Its label fills most of its height, with less padding than smaller buttons have. */
 .button.large {
   --button-shadow: var(--shadow);
   --button-pressed-shadow: 6px 6px 0 var(--ink);
 
-  padding: clamp(6px, 3vmin - 3px, 24px);
+  padding: clamp(4px, 1.75vmin, 14px) clamp(10px, 3vmin, 24px);
   border: var(--border);
-  font-size: min(1.25rem, 1rem + 0.5vmin);
+  font-size: min(2.25rem, 1rem + 2.25vmin);
+  font-weight: 400;
+  line-height: 1.2;
 }
 
 .button:disabled {
@@ -726,9 +741,45 @@ body::after {
   margin: 0 0 20px;
 }
 
+/* The kinds of place to filter out, in columns that scroll when there are too many to fit. */
+.filter-kinds {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));
+  gap: 6px 16px;
+  max-height: min(50dvh, 22rem);
+  margin: 0 0 20px;
+  padding: 2px;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.filter-kinds label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.filter-kinds input {
+  flex: none;
+  width: 1.1em;
+  height: 1.1em;
+  margin: 0;
+  accent-color: var(--ink);
+  cursor: pointer;
+}
+
 .popup form {
   display: flex;
   justify-content: flex-end;
+  gap: 12px;
+}
+
+.button-icon {
+  width: 1.1em;
+  height: 1.1em;
+  margin-right: 0.35em;
+  vertical-align: -0.2em;
 }
 
 .panel.side { 
