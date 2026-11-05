@@ -1,6 +1,13 @@
+import { readFileSync, statSync, writeFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import type { LatLng } from '../src/geo.ts'
 import { distanceKm, PLACE_KINDS, type PlaceKindId } from '../src/places.ts'
 import { readOsmPbf, type Tags } from './osmPbf.ts'
+
+// The OpenStreetMap extract the API reads on this machine, from https://download.geofabrik.de/.
+export const DEFAULT_EXTRACT = fileURLToPath(new URL('../tmp/thailand-261014.osm.pbf', import.meta.url))
+// Bump when buildPlaceIndex changes what it stores, so old caches are rebuilt.
+const INDEX_VERSION = 3
 
 // `name` plus any `name:<language>` tags, with the keys lowercased.
 export type Names = Tags
@@ -13,6 +20,29 @@ export type PlaceIndex = Record<PlaceKindId, IndexedPlace[]>
 type Area = { id: string; kinds: PlaceKindId[]; names: Names; rings: (readonly number[])[] }
 
 const KIND_IDS = Object.keys(PLACE_KINDS) as PlaceKindId[]
+
+// The index is cached next to the extract, and rebuilt when the extract or the place kinds change.
+export function loadPlaceIndex(path: string): PlaceIndex {
+  const cachePath = `${path}.places.json`
+  const { size, mtimeMs } = statSync(path)
+  const key = JSON.stringify({ version: INDEX_VERSION, size, mtimeMs, kinds: PLACE_KINDS })
+  try {
+    const cached = JSON.parse(readFileSync(cachePath, 'utf8'))
+    if (cached.key === key) {
+      console.log(`Places API: loaded the index from ${cachePath}`)
+      return cached.index
+    }
+  } catch {
+    // No usable cache, so build one.
+  }
+  console.log(`Places API: indexing ${path}, which takes about a minute…`)
+  const started = performance.now()
+  const built = buildPlaceIndex(path)
+  const count = Object.values(built).reduce((sum, places) => sum + places.length, 0)
+  console.log(`Places API: indexed ${count} places in ${Math.round((performance.now() - started) / 1000)} s`)
+  writeFileSync(cachePath, JSON.stringify({ key, index: built }))
+  return built
+}
 
 // Areas are mapped as ways or multipolygon relations, so the file is read three times: relations first to learn which
 // ways they are made of, then ways to learn which nodes they need, then nodes for coordinates.

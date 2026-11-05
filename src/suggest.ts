@@ -1,15 +1,14 @@
 import type { Emotion } from './emotions'
 import type { LatLng } from './geo'
-import { DISTANCE_FACTORS, PLACE_KINDS, PLACES_FOR_EMOTION, type Place, type PlaceKindId } from './places'
+import { DISTANCE_FACTORS, PLACE_KINDS, PLACES_FOR_EMOTION, SEARCH_RADIUS_KM, type Place, type PlaceKindId } from './places'
 import { formatAnswers, type Answer } from './questions'
 import { parseRoute, type FetchDeps, type Route, type TravelMode } from './route'
 
 // `reason` is why Claude picked the place, when it did.
 export type PlaceSuggestion = { place: Place; route: Route | null; reason: string | null }
 
-// Served by `npm run api` from a local OpenStreetMap extract.
+// Served by server/api.ts: by `npm run api` on this machine, and by a Vercel function on the live site.
 const SUGGEST_API = '/api/suggest'
-const SEARCH_RADIUS_KM = 7.5
 
 // A place for the emotion and answers, with the route there, skipping the place ids in `exclude`: Claude's pick from the
 // closest by road, or the closest when Claude isn't set up. Resolves to null when there is none nearby.

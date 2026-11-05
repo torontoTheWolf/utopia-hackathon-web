@@ -81,6 +81,9 @@ export const DISTANCE_FACTORS: { readonly [E in Emotion]?: Partial<Record<PlaceK
   Sad: { cafe: 2 },
 }
 
+// How far around you the app looks for places.
+export const SEARCH_RADIUS_KM = 7.5
+
 // `id` is the OpenStreetMap element, such as n123 for a node.
 export type Place = { id: string; name: string; position: LatLng; kind: PlaceKindId }
 

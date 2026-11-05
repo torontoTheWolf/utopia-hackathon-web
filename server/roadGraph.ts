@@ -102,6 +102,59 @@ export function loadRoadGraph(pbfPath: string): RoadGraph {
   return graph
 }
 
+// The roads within radiusKm of center, small enough for the live site's API (see area.ts). Nodes keep the networks
+// they belong to in the whole graph, so points snap to the same roads.
+export function cropRoadGraph(graph: RoadGraph, center: LatLng, radiusKm: number): RoadGraph {
+  const nodeCount = graph.lat.length
+  const lngScale = Math.cos((center.lat * Math.PI) / 180)
+  const kept = new Int32Array(nodeCount).fill(-1)
+  let keptCount = 0
+  for (let node = 0; node < nodeCount; node++) {
+    const position = { lat: graph.lat[node] / UNITS_PER_DEGREE, lng: graph.lng[node] / UNITS_PER_DEGREE }
+    if (flatMetres(center, position, lngScale) <= radiusKm * 1000) kept[node] = keptCount++
+  }
+  const lat = new Int32Array(keptCount)
+  const lng = new Int32Array(keptCount)
+  const snapModes = new Uint8Array(keptCount)
+  const firstEdge = new Int32Array(keptCount + 1)
+  const targets: number[] = []
+  const flags: number[] = []
+  for (let node = 0; node < nodeCount; node++) {
+    const at = kept[node]
+    if (at < 0) continue
+    lat[at] = graph.lat[node]
+    lng[at] = graph.lng[node]
+    snapModes[at] = graph.snapModes[node]
+    for (let edge = graph.firstEdge[node]; edge < graph.firstEdge[node + 1]; edge++) {
+      const target = kept[graph.edgeTarget[edge]]
+      if (target < 0) continue
+      targets.push(target)
+      flags.push(graph.edgeFlags[edge])
+    }
+    firstEdge[at + 1] = targets.length
+  }
+  return {
+    lat,
+    lng,
+    firstEdge,
+    edgeTarget: Int32Array.from(targets),
+    edgeFlags: Uint8Array.from(flags),
+    snapModes,
+    ...buildGrid(lat, lng, snapModes),
+  }
+}
+
+// Saved in the cache's layout, for openRoadGraph.
+export function saveRoadGraph(path: string, graph: RoadGraph): void {
+  writeGraph(path, `saved-v${GRAPH_VERSION}`, graph)
+}
+
+export function openRoadGraph(path: string): RoadGraph {
+  const graph = readGraph(path, `saved-v${GRAPH_VERSION}`)
+  if (graph === null) throw new Error(`${path} was saved by another version of roadGraph.ts`)
+  return graph
+}
+
 export function buildRoadGraph(pbfPath: string): RoadGraph {
   // Built in steps so that each step's working arrays can be freed before the next.
   const edges = readEdges(pbfPath)

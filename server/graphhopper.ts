@@ -28,7 +28,8 @@ const MAX_HEAP = '7g'
 // Like the API's own router, a route's ends may be at most this far from a road.
 const SNAP_KM = 1
 
-export function startGraphHopper(pbfPath: string): GraphHopper {
+// `isReady` says whether GraphHopper has started and answers routes.
+export function startGraphHopper(pbfPath: string): GraphHopper & { isReady: () => boolean } {
   const folder = join(dirname(pbfPath), 'graphhopper')
   const { size, mtimeMs } = statSync(pbfPath)
   const graph = join(folder, `graph-${basename(pbfPath)}-${size}-${Math.round(mtimeMs)}-v${GRAPH_VERSION}`)
@@ -78,6 +79,7 @@ export function startGraphHopper(pbfPath: string): GraphHopper {
   launch().catch((error: unknown) => console.error(`GraphHopper: couldn't start (${error}), so routes come from the built-in router.`))
 
   return {
+    isReady: () => ready,
     async route(from, to, mode, locale) {
       if (!ready) return null
       const params = new URLSearchParams({ profile: mode, points_encoded: 'false', instructions: 'true', locale })

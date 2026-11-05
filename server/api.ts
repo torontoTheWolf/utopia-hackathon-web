@@ -1,0 +1,223 @@
+import type { IncomingMessage, ServerResponse } from 'node:http'
+import { EMOTIONS, type Emotion } from '../src/emotions.ts'
+import type { LatLng } from '../src/geo.ts'
+import { distanceKm, PLACE_KINDS, type PlaceKindId } from '../src/places.ts'
+import { parseAnswers, QUESTIONS } from '../src/questions.ts'
+import { TRAVEL_MODES, type Route, type TravelMode } from '../src/route.ts'
+import type { GraphHopper } from './graphhopper.ts'
+import { pickPlace } from './pick.ts'
+import { placesNear, type Names, type PlaceIndex } from './placeIndex.ts'
+import type { Router } from './roadGraph.ts'
+import { canSpeak, speak } from './speak.ts'
+
+// The places API's requests, answered the same way on this machine (main.ts) and on Vercel (vercel.ts). Only where the
+// places, roads and routes come from differs.
+
+export type Places = { index: PlaceIndex; router: Router; graphHopper: GraphHopper }
+
+export type Handler = (request: IncomingMessage, response: ServerResponse) => Promise<void>
+
+// Limits for when the API is reachable from the internet. The app searches 7.5 km around you.
+const MAX_RADIUS_KM = 50
+const MAX_ROUTE_KM = 50
+const REQUESTS_PER_MINUTE = 300
+const MAX_FACTOR = 10
+// ElevenLabs charges by the character, so reading aloud has a lower limit, and the text a length cap.
+const SPEECH_PER_MINUTE = 20
+const MAX_SPEECH_CHARS = 600
+// The built-in router finds the closest place of each kind, for up to this many kinds. GraphHopper measures routes to
+// them, and Claude picks one, or else the shortest wins. One of each kind gives Claude a real choice where one kind, like
+// temples in Bangkok, would otherwise fill every place.
+const CANDIDATES = 8
+
+// `places` is called only for requests that need them, so reading aloud doesn't wait for them to load.
+export function createHandler(places: () => Places): Handler {
+  // Counts each client's requests, and requests to read aloud, in the current minute.
+  let requestCounts = new Map<string, number>()
+  let speechCounts = new Map<string, number>()
+  setInterval(() => {
+    requestCounts = new Map()
+    speechCounts = new Map()
+  }, 60_000).unref()
+
+  async function servePlaces(params: URLSearchParams, request: IncomingMessage, response: ServerResponse): Promise<void> {
+    const kind = params.get('kind') ?? ''
+    const center = toLatLng(params.get('lat'), params.get('lng'))
+    const radiusKm = toNumber(params.get('radiusKm'))
+    // Written so that NaN fails the radius check.
+    if (!Object.hasOwn(PLACE_KINDS, kind) || center === null || !(radiusKm > 0 && radiusKm <= MAX_RADIUS_KM)) {
+      return send(response, 400, { error: `Expected kind, lat, lng and radiusKm up to ${MAX_RADIUS_KM}` })
+    }
+    const languages = preferredLanguages(request.headers['accept-language'])
+    const found = placesNear(places().index, kind as PlaceKindId, center, radiusKm).map(({ id, names, position }) => ({
+      id,
+      name: localName(names, languages),
+      lat: position.lat,
+      lng: position.lng,
+    }))
+    send(response, 200, found)
+  }
+
+  // Answers 404 when the two points aren't joined by roads for the mode, or either is more than a kilometre from one.
+  async function serveRoute(params: URLSearchParams, request: IncomingMessage, response: ServerResponse): Promise<void> {
+    const [from, to] = ['from', 'to'].map((name) => {
+      const [lat = null, lng = null, ...rest] = params.get(name)?.split(',') ?? []
+      return rest.length === 0 ? toLatLng(lat, lng) : null
+    })
+    const mode = params.get('mode') ?? ''
+    if (from === null || to === null || !Object.hasOwn(TRAVEL_MODES, mode)) {
+      return send(response, 400, { error: 'Expected from and to as lat,lng and a mode' })
+    }
+    if (distanceKm(from, to) > MAX_ROUTE_KM) return send(response, 400, { error: `from and to must be within ${MAX_ROUTE_KM} km` })
+    const route = await findRoute(from, to, mode as TravelMode, request)
+    if (route === null) return send(response, 404, { error: 'No route' })
+    send(response, 200, routeJson(route))
+  }
+
+  // The place of any of the kinds that is closest by road for the travel mode, with the route there, skipping the place
+  // ids in `exclude`. A kind written as `cafe:2` counts as twice as far away. Answers 404 when no place within radiusKm
+  // can be reached by road.
+  async function serveSuggestion(params: URLSearchParams, request: IncomingMessage, response: ServerResponse): Promise<void> {
+    const kinds = new Map(
+      (params.get('kinds') ?? '').split(',').map((item) => {
+        const [kind, factor = '1'] = item.split(':')
+        return [kind, toNumber(factor)]
+      }),
+    )
+    const center = toLatLng(params.get('lat'), params.get('lng'))
+    const radiusKm = toNumber(params.get('radiusKm'))
+    const mode = params.get('mode') ?? ''
+    const exclude = new Set(params.get('exclude')?.split(',') ?? [])
+    // Without an emotion, the closest place is suggested. Unanswered questions are left out of "answers", and answers it
+    // can't read, as from a live site built before the questions changed, count as unanswered.
+    const emotion = params.get('emotion')
+    const answers = parseAnswers(params.get('answers') ?? '') ?? QUESTIONS.map(() => null)
+    if (
+      // Written so that NaN fails the factor and radius checks.
+      ![...kinds].every(([kind, factor]) => Object.hasOwn(PLACE_KINDS, kind) && factor > 0 && factor <= MAX_FACTOR) ||
+      center === null ||
+      !(radiusKm > 0 && radiusKm <= MAX_RADIUS_KM) ||
+      !Object.hasOwn(TRAVEL_MODES, mode) ||
+      (emotion !== null && !(EMOTIONS as readonly string[]).includes(emotion))
+    ) {
+      return send(response, 400, {
+        error: `Expected kinds, each with a factor up to ${MAX_FACTOR}, lat, lng, radiusKm up to ${MAX_RADIUS_KM} and a mode, and optionally an emotion`,
+      })
+    }
+    const { index, router } = places()
+    const nearby = [...kinds].map(([kind, factor]) => ({ kind: kind as PlaceKindId, factor, places: placesNear(index, kind as PlaceKindId, center, radiusKm) }))
+    const candidates = nearby.flatMap(({ kind, factor, places }) =>
+      places.filter((place) => !exclude.has(place.id)).map((place) => ({ ...place, kind, factor, group: kind })),
+    )
+    // The kinds of place already suggested, which Try again asks Claude to move on from.
+    const offered = nearby.filter(({ places }) => places.some((place) => exclude.has(place.id))).map(({ kind }) => PLACE_KINDS[kind].label)
+    const nearest = router.nearest(center, candidates, mode as TravelMode, CANDIDATES)
+    if (nearest.length === 0) return send(response, 404, { error: 'No places that roads reach' })
+    // The same routes /api/route gives, so they don't change when the app asks again.
+    const routed = await Promise.all(
+      nearest.map(async (index) => ({ place: candidates[index], route: await findRoute(center, candidates[index].position, mode as TravelMode, request) })),
+    )
+    const languages = preferredLanguages(request.headers['accept-language'])
+    // Claude picks from the places a route reaches, or else the closest wins, counting each kind's factor.
+    const reachable = routed.flatMap(({ place, route }) =>
+      route === null
+        ? []
+        : [{ id: place.id, name: localName(place.names, languages), kind: PLACE_KINDS[place.kind as PlaceKindId].label, roadKm: Math.round(route.distanceKm * 10) / 10 }],
+    )
+    const pick = emotion === null ? null : await pickPlace(emotion as Emotion, answers, reachable, offered)
+    const picked = routed.find(({ place }) => place.id === pick?.id)
+    const length = ({ place, route }: (typeof routed)[number]) => (route === null ? Infinity : route.distanceKm * place.factor)
+    const { place, route } = picked ?? routed.reduce((best, next) => (length(next) < length(best) ? next : best))
+    send(response, 200, {
+      place: { id: place.id, name: localName(place.names, languages), kind: place.kind, ...place.position },
+      route: route && routeJson(route),
+      reason: picked && pick ? pick.reason : null,
+    })
+  }
+
+  // MP3 audio of `text`, read by ElevenLabs. Answers 503 when ELEVENLABS_API_KEY isn't set, and 502 when ElevenLabs fails.
+  // Browsers keep the audio for a day, so playing the same text again doesn't cost another request.
+  async function serveSpeech(params: URLSearchParams, request: IncomingMessage, response: ServerResponse): Promise<void> {
+    const text = params.get('text')?.trim() ?? ''
+    if (text === '' || text.length > MAX_SPEECH_CHARS) return send(response, 400, { error: `Expected text up to ${MAX_SPEECH_CHARS} characters` })
+    if (!canSpeak()) return send(response, 503, { error: 'Reading aloud is not set up' })
+    if (isOverLimit(request, speechCounts, SPEECH_PER_MINUTE)) return send(response, 429, { error: 'Too many requests' }, { 'Retry-After': '60' })
+    const audio = await speak(text)
+    if (audio === null) return send(response, 502, { error: 'ElevenLabs failed' })
+    response.writeHead(200, { 'Content-Type': 'audio/mpeg', 'Content-Length': audio.length, 'Cache-Control': 'private, max-age=86400' })
+    response.end(audio)
+  }
+
+  // GraphHopper's route, with directions, or the built-in router's when GraphHopper isn't ready or finds none.
+  async function findRoute(from: LatLng, to: LatLng, mode: TravelMode, request: IncomingMessage): Promise<Route | null> {
+    const locale = preferredLanguages(request.headers['accept-language'])[0]?.split('-')[0] ?? 'en'
+    const { graphHopper, router } = places()
+    return (await graphHopper.route(from, to, mode, locale)) ?? router.route(from, to, mode)
+  }
+
+  const routes: { [path: string]: (params: URLSearchParams, request: IncomingMessage, response: ServerResponse) => Promise<void> } = {
+    '/api/places': servePlaces,
+    '/api/route': serveRoute,
+    '/api/suggest': serveSuggestion,
+    '/api/speak': serveSpeech,
+  }
+
+  return async (request, response) => {
+    const url = new URL(request.url ?? '/', 'http://localhost')
+    if (isOverLimit(request, requestCounts, REQUESTS_PER_MINUTE)) return send(response, 429, { error: 'Too many requests' }, { 'Retry-After': '60' })
+    const serve = request.method === 'GET' && Object.hasOwn(routes, url.pathname) ? routes[url.pathname] : null
+    if (serve === null) return send(response, 404, { error: 'Not found' })
+    try {
+      await serve(url.searchParams, request, response)
+    } catch (error) {
+      console.error(`Places API: ${url.pathname} failed (${error instanceof Error ? error.message : String(error)})`)
+      if (!response.headersSent) send(response, 500, { error: 'Something went wrong' })
+    }
+  }
+}
+
+function routeJson({ distanceKm, path, steps }: Route) {
+  // Six decimals is about 10 cm, plenty for drawing.
+  const round = (degrees: number) => Math.round(degrees * 1e6) / 1e6
+  return { distanceKm, path: path.map(({ lat, lng }) => [round(lat), round(lng)]), steps }
+}
+
+function toLatLng(lat: string | null, lng: string | null): LatLng | null {
+  const position = { lat: toNumber(lat), lng: toNumber(lng) }
+  // Written so that NaN fails both checks.
+  return Math.abs(position.lat) <= 90 && Math.abs(position.lng) <= 180 ? position : null
+}
+
+function toNumber(value: string | null): number {
+  return value === null || value.trim() === '' ? NaN : Number(value)
+}
+
+function preferredLanguages(acceptLanguage = ''): string[] {
+  return acceptLanguage
+    .split(',')
+    .map((range) => range.split(';')[0].trim().toLowerCase())
+    .filter((language) => language !== '' && language !== '*')
+}
+
+// Like Nominatim, prefers the name in the browser's languages and falls back to the local name.
+function localName(names: Names, languages: readonly string[]): string {
+  for (const language of languages) {
+    const name = names[`name:${language}`] ?? names[`name:${language.split('-')[0]}`]
+    if (name !== undefined) return name
+  }
+  return names.name
+}
+
+// Through Vercel or a tunnel, the visitor is the first forwarded address.
+function isOverLimit(request: IncomingMessage, counts: Map<string, number>, limit: number): boolean {
+  const forwarded = request.headers['x-forwarded-for']
+  const client = String(forwarded ?? '').split(',')[0].trim() || request.socket.remoteAddress || ''
+  const count = (counts.get(client) ?? 0) + 1
+  counts.set(client, count)
+  return count > limit
+}
+
+function send(response: ServerResponse, status: number, body: unknown, headers: { [name: string]: string } = {}): void {
+  response.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', ...headers })
+  response.end(JSON.stringify(body))
+}

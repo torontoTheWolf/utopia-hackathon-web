@@ -9,8 +9,9 @@ export type LocationState =
   | { status: 'unavailable' }
 
 // For now everyone is placed at Avani Sukhumvit Bangkok Hotel, by BTS On Nut (OpenStreetMap node 11752122869), and the
-// browser's location isn't asked for. Set this to null to use people's real locations again.
-const FIXED_LOCATION: { position: LatLng; accuracy: number } | null = {
+// browser's location isn't asked for. Set this to null to use people's real locations again. The live site's API only
+// knows the area around this spot, so after changing it, run `npm run area` (see server/area.ts).
+export const FIXED_LOCATION: { position: LatLng; accuracy: number } | null = {
   position: { lat: 13.7052416, lng: 100.6015603 },
   accuracy: 20,
 }

@@ -17,7 +17,7 @@ export type FetchDeps = {
   signal: AbortSignal
 }
 
-// Served by `npm run api` from a local OpenStreetMap extract.
+// Served by server/api.ts: by `npm run api` on this machine, and by a Vercel function on the live site.
 const ROUTE_API = '/api/route'
 
 // Resolves to null when there is no route, such as when either end is far from any road.
